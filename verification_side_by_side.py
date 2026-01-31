@@ -38,12 +38,30 @@ def create_mockup_vs_label_comparison(mockup_image, label_reference, sku=""):
     # Target height for both sides (larger for better Vision API analysis)
     target_height = 800
 
+    # DEBUG: Log mockup mode before processing
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[VERIFICATION] Mockup mode BEFORE resize: {mockup_image.mode}, size: {mockup_image.size}")
+
     # Resize mockup maintaining aspect ratio
     mockup_ratio = target_height / mockup_image.height
     mockup_resized = mockup_image.resize(
         (int(mockup_image.width * mockup_ratio), target_height),
         PIL.Image.Resampling.LANCZOS
     )
+
+    logger.info(f"[VERIFICATION] Mockup mode AFTER resize: {mockup_resized.mode}")
+
+    # Convert mockup to RGB (preserve colors)
+    if mockup_resized.mode == 'RGBA':
+        # Composite onto white background
+        mockup_with_bg = PIL.Image.new('RGB', mockup_resized.size, (255, 255, 255))
+        mockup_with_bg.paste(mockup_resized, (0, 0), mockup_resized)
+        mockup_resized = mockup_with_bg
+        logger.info(f"[VERIFICATION] Converted RGBA mockup to RGB with white background")
+    elif mockup_resized.mode != 'RGB':
+        mockup_resized = mockup_resized.convert('RGB')
+        logger.info(f"[VERIFICATION] Converted {mockup_resized.mode} mockup to RGB")
 
     # Resize label maintaining aspect ratio
     label_ratio = target_height / label_reference.height

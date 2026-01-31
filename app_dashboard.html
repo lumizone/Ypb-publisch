@@ -7691,12 +7691,86 @@
             progressText.textContent = 'Starting...';
             resultsCard.style.display = 'none';
 
+            // Generate tracking ID for progress
+            const mockupTrackingId = 'mockups_' + Date.now();
+            formData.append('tracking_id', mockupTrackingId);
+
+            let mockupJobId = null;
+
+            // Start polling for progress
+            const mockupProgressInterval = setInterval(async () => {
+                try {
+                    const progressResponse = await fetch(`/api/generation-progress/${mockupTrackingId}`);
+                    const progressData = await progressResponse.json();
+
+                    if (progressData.status === 'processing') {
+                        const pct = progressData.percentage || 0;
+                        progressFill.style.width = Math.max(pct, 5) + '%';
+                        progressText.textContent = `${progressData.message} (${progressData.current}/${progressData.total})`;
+                    }
+                    else if (progressData.status === 'completed') {
+                        clearInterval(mockupProgressInterval);
+                        await fetchMockupGenerationResults(mockupJobId);
+                    }
+                    else if (progressData.status === 'failed') {
+                        clearInterval(mockupProgressInterval);
+                        status.textContent = progressData.message || 'Generation failed';
+                        status.className = 'status error';
+                        progressFill.style.width = '100%';
+                        progressText.textContent = 'Failed';
+                        btn.disabled = false;
+                        setTimeout(() => { progress.style.display = 'none'; }, 2000);
+                    }
+                } catch (e) {
+                    // Ignore polling errors
+                }
+            }, 500);
+
             try {
+                // Send request (returns immediately with job_id)
                 const response = await fetch('/api/generate-mockups-from-labels', {
                     method: 'POST',
                     body: formData
                 });
 
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    mockupJobId = data.job_id;
+                    status.textContent = 'Generating mockups in background...';
+                    status.className = 'status';
+                    // Polling will handle the rest
+                } else {
+                    clearInterval(mockupProgressInterval);
+                    status.textContent = data.error || 'Failed to start mockup generation';
+                    status.className = 'status error';
+                    progressFill.style.width = '100%';
+                    progressText.textContent = 'Error';
+                    btn.disabled = false;
+                    setTimeout(() => { progress.style.display = 'none'; }, 2000);
+                }
+            } catch (error) {
+                clearInterval(mockupProgressInterval);
+                status.textContent = 'Error: ' + error.message;
+                status.className = 'status error';
+                progressFill.style.width = '100%';
+                progressText.textContent = 'Error';
+                btn.disabled = false;
+                setTimeout(() => { progress.style.display = 'none'; }, 2000);
+            }
+        }
+
+        // Fetch mockup generation results when background task completes
+        async function fetchMockupGenerationResults(jobId) {
+            const status = document.getElementById('mockupsStatus');
+            const progress = document.getElementById('mockupsProgress');
+            const progressFill = document.getElementById('mockupsProgressFill');
+            const progressText = document.getElementById('mockupsProgressText');
+            const btn = document.getElementById('generateMockupsCombinedBtn');
+            const resultsCard = document.getElementById('combinedResultsCard');
+
+            try {
+                const response = await fetch(`/api/mockup-generation-results/${jobId}`);
                 const data = await response.json();
 
                 if (response.ok && data.success) {
@@ -7709,45 +7783,32 @@
                     progressFill.style.width = '100%';
                     progressText.textContent = 'Complete!';
 
-                    // Display mockups
                     displayCombinedMockups(data.mockups);
                     resultsCard.style.display = 'block';
 
                     if (data.zip_file) {
                         document.getElementById('downloadCombinedZipLink').href = `/api/download-mockups/${data.job_id}`;
-                        // Set "Download All" link (labels + mockups combined by SKU)
                         document.getElementById('downloadAllCombinedZipLink').href = `/api/download-combined-all/${labelsJobIdCombined}/${data.job_id}`;
                     }
 
-                    // Show error details if any
                     if (data.error_details && data.error_details.length > 0) {
                         console.error('Mockup generation errors:', data.error_details);
                         showNotification(`${data.errors} mockups failed. Check console for details.`, 'warning');
                     }
 
                     btn.disabled = false;
-                    setTimeout(() => {
-                        progress.style.display = 'none';
-                    }, 2000);
+                    setTimeout(() => { progress.style.display = 'none'; }, 2000);
                 } else {
-                    status.textContent = data.error || 'Failed to generate mockups';
+                    status.textContent = data.error || 'Failed to fetch results';
                     status.className = 'status error';
-                    progressFill.style.width = '100%';
-                    progressText.textContent = 'Error';
                     btn.disabled = false;
-                    setTimeout(() => {
-                        progress.style.display = 'none';
-                    }, 2000);
+                    setTimeout(() => { progress.style.display = 'none'; }, 2000);
                 }
             } catch (error) {
-                status.textContent = 'Error: ' + error.message;
+                status.textContent = 'Error fetching results: ' + error.message;
                 status.className = 'status error';
-                progressFill.style.width = '100%';
-                progressText.textContent = 'Error';
                 btn.disabled = false;
-                setTimeout(() => {
-                    progress.style.display = 'none';
-                }, 2000);
+                setTimeout(() => { progress.style.display = 'none'; }, 2000);
             }
         }
 

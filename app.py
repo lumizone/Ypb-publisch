@@ -229,21 +229,21 @@ def _remove_green_halo_and_cleanup(image):
         g = rgb[:, :, 1]
         b = rgb[:, :, 2]
         
-        # === MULTI-STRATEGY GREEN DETECTION ===
-        # Cel: Wykryć WSZYSTKIE zielone piksele używając wielu metod
-        
-        # STRATEGIA 1: Dystans od czystego zielonego (#00FF00)
+        # === SMART GREEN SCREEN DETECTION ===
+        # Goal: Remove ONLY pure green screen (#00FF00), NOT label colors like #ccdc34
+
+        # STRATEGIA 1: Dystans od czystego zielonego (#00FF00) - BARDZIEJ RESTRYKCYJNY
+        # Pure green: RGB(0, 255, 0) - very bright green with no red/blue
         green_distance = np.sqrt((r - 0) ** 2 + (g - 255) ** 2 + (b - 0) ** 2)
-        close_to_pure_green = (green_distance < 120) & (g > 100)
-        
-        # STRATEGIA 2: Green dominance (zielony jest dominujący)
-        # Green musi być wyraźnie większy niż red i blue
-        green_dominant = (g > r + 30) & (g > b + 30) & (g > 80)
-        
-        # STRATEGIA 3: Green ratio (proporcja zielonego w całości)
-        total_intensity = r + g + b + 1  # +1 żeby uniknąć dzielenia przez 0
-        green_ratio = g / total_intensity
-        high_green_ratio = (green_ratio > 0.45) & (g > 70)
+        close_to_pure_green = (green_distance < 70) & (g > 200) & (r < 80) & (b < 80)
+
+        # STRATEGIA 2: Green screen specific - bardzo jasny zielony bez czerwonego/niebieskiego
+        # This catches #00FF00 and very close variants but NOT yellow-green like #ccdc34
+        pure_green_screen = (g > 220) & (r < 60) & (b < 60)
+
+        # DISABLED STRATEGY 3: Too aggressive - was removing label background
+        # green_dominant = (g > r + 30) & (g > b + 30) & (g > 80)
+        # high_green_ratio = (green_ratio > 0.45) & (g > 70)
         
         # STRATEGIA 4: HSV - Hue w zakresie zielonego (60-180 stopni)
         # Konwertuj do HSV dla lepszego wykrywania odcieni
@@ -275,27 +275,42 @@ def _remove_green_halo_and_cleanup(image):
         # Saturation
         saturation = np.where(max_val > 0, diff / max_val, 0)
         
-        # Green hue range: 60-180 degrees (zielony i cyjan)
-        green_hue = ((hue >= 60) & (hue <= 180) & (saturation > 0.2) & (max_val > 0.3))
-        
-        # STRATEGIA 5: Jasne zielone (green screen effect)
-        bright_green = (g > 180) & (r < 120) & (b < 120)
-        
-        # STRATEGIA 6: Ciemne zielone (cienie zielonego tła)
-        dark_green = (g > 60) & (g > r + 20) & (g > b + 20) & (g < 150)
-        
-        # STRATEGIA 7: Półprzezroczyste zielone (na krawędziach)
-        semi_transparent_green = (alpha > 0) & (alpha < 250) & (g > r + 25) & (g > b + 25) & (g > 70)
-        
-        # === POŁĄCZ WSZYSTKIE STRATEGIE ===
+        # STRATEGIA 3: Bardzo jasne zielone (green screen) - RESTRYKCYJNY
+        # Only very bright green with minimal red/blue
+        bright_green = (g > 220) & (r < 60) & (b < 60)
+
+        # STRATEGIA 4: Ciemne cienie green screen - RESTRYKCYJNY
+        # Only dark green shadows with very low red/blue
+        dark_green_shadows = (g > 80) & (g < 180) & (r < 40) & (b < 40)
+
+        # STRATEGIA 5: Półprzezroczyste zielone (green halo) - KONSERWATYWNY
+        # Use HSV ONLY for very transparent pixels (true edges/anti-aliasing)
+        # This catches green glow but NOT solid mockup areas
+        green_hue_edges = (
+            (alpha > 0) & (alpha < 150) &   # Very transparent edges only
+            (hue >= 90) & (hue <= 150) &    # Narrow green hue (pure green range)
+            (saturation > 0.4) &             # Must be clearly colorful
+            (max_val > 0.5) &                # Must be bright enough
+            (g > 100)                        # Require significant green
+        )
+
+        # STRATEGIA 6: Zielona poświata - BARDZO KONSERWATYWNY
+        # Only catch very obvious green tint on very transparent areas
+        green_tint_edges = (
+            (alpha > 0) & (alpha < 100) &    # Extremely transparent only
+            (g > r + 30) & (g > b + 30) &    # Strong green dominance
+            (g > 120)                         # High green value
+        )
+
+        # === POŁĄCZ BEZPIECZNE STRATEGIE ===
+        # Combines strategies that remove green screen + edge glow, but preserve label colors
         green_to_remove = (
-            close_to_pure_green | 
-            green_dominant | 
-            high_green_ratio | 
-            green_hue | 
-            bright_green | 
-            dark_green | 
-            semi_transparent_green
+            close_to_pure_green |      # Pure green #00FF00
+            pure_green_screen |         # Very bright green
+            bright_green |              # Bright green screen
+            dark_green_shadows |        # Dark green shadows
+            green_hue_edges |           # Green halo on semi-transparent edges (NEW)
+            green_tint_edges            # Subtle green glow on edges (NEW)
         )
         
         # === WYJĄTKI: ZACHOWAJ piksele które są WYRAŹNIE NIE-zielone ===
@@ -2611,9 +2626,10 @@ IMPORTANT: The label image shows the EXACT text that must appear. Copy it charac
             logger.warning(f"Gemini API did not return image for {sku}")
             return None
 
-        # Remove green background using smart method with proper post-processing
+        # Remove green background using SMART method (preserves label colors like #ccdc34)
         result_image = remove_background_with_reference(result_image, vial_image)
 
+        logger.info(f"[MOCKUP GEN] Final mockup for {sku}: mode={result_image.mode}, size={result_image.size}")
         return result_image
 
     except Exception as e:
@@ -3139,9 +3155,9 @@ def download_labels(job_id):
         return send_file(zip_path, as_attachment=True, download_name=f"labels_{job_id}.zip")
     return jsonify({'error': 'ZIP file not found'}), 404
 
-
+@run_in_background
 def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, labels_job_id, label_crop_data, output_dir):
-    """Generate mockups from labels - blocking execution"""
+    """Background task for generating mockups from labels"""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     import threading
     import copy
@@ -3188,6 +3204,7 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
 
                 # Load label image
                 label_image_original = PIL.Image.open(label_path)
+                logger.info(f"[Thread {sku}] Label loaded from {label_path.name}: mode={label_image_original.mode}, size={label_image_original.size}")
 
                 # Crop if needed
                 thread_crop_data = copy.deepcopy(label_crop_data) if label_crop_data else None
@@ -3221,9 +3238,23 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                     if attempt > 1 and last_errors:
                         retry_hint = f"PREVIOUS ATTEMPT FAILED. Errors: {', '.join(last_errors)}."
 
+                    # Composite label onto white background before sending to Gemini
+                    label_for_gemini = label_image_cropped.copy()
+                    logger.info(f"[Thread {sku}] Label BEFORE composite: mode={label_for_gemini.mode}, size={label_for_gemini.size}")
+
+                    if label_for_gemini.mode in ('RGBA', 'LA'):
+                        bg_white = PIL.Image.new('RGB', label_for_gemini.size, (255, 255, 255))
+                        bg_white.paste(label_for_gemini, mask=label_for_gemini.split()[-1])
+                        label_for_gemini = bg_white
+                        logger.info(f"[Thread {sku}] Label AFTER composite: mode={label_for_gemini.mode}")
+                    elif label_for_gemini.mode != 'RGB':
+                        original_mode = label_for_gemini.mode
+                        label_for_gemini = label_for_gemini.convert('RGB')
+                        logger.info(f"[Thread {sku}] Label converted from {original_mode} to RGB")
+
                     mockup_image = _generate_mockup_for_product_with_retry(
                         vial_image_copy,
-                        label_image_cropped.copy(),
+                        label_for_gemini,
                         product_name,
                         sku,
                         dosage,
@@ -3236,11 +3267,11 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                         last_errors = ["Failed to generate mockup image"]
                         continue
 
-                    # Verify mockup
+                    # Verify mockup (use same composited label as sent to Gemini)
                     try:
                         verification_result = verify_mockup_with_sidebyside(
                             mockup_image,
-                            label_image_cropped,
+                            label_for_gemini,
                             sku,
                             product_name,
                             dosage,
@@ -3286,8 +3317,10 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
 
                 return {
                     'sku': sku,
+                    'name': product_name,  # Frontend expects 'name'
                     'product_name': product_name,
                     'filename': mockup_filename,
+                    'url': f'/api/mockup-preview/{job_id}/{mockup_filename}',  # Frontend expects 'url'
                     'preview_url': f'/api/mockup-preview/{job_id}/{mockup_filename}',
                     'verification': verification_result
                 }
@@ -3323,8 +3356,8 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                 if mockup_file_path.exists():
                     zf.write(mockup_file_path, mockup['filename'])
 
-        # Return results
-        return {
+        # Store results
+        background_results[job_id] = {
             'success': True,
             'job_id': job_id,
             'total': len(mockups),
@@ -3334,17 +3367,32 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
             'zip_file': zip_filename
         }
 
+        # Mark complete
+        progress_tracker.set(tracking_id, {
+            'current': len(labels),
+            'total': len(labels),
+            'status': 'completed',
+            'message': f'Complete! Generated {len(mockups)} mockups',
+            'percentage': 100
+        })
+
+        logger.info(f"[Background] Completed job {job_id}")
+
     except Exception as e:
-        logger.error(f"Error generating mockups: {e}", exc_info=True)
-        return {
+        logger.error(f"[Background] Error: {e}", exc_info=True)
+        background_results[job_id] = {
             'success': False,
             'error': str(e)
         }
+        progress_tracker.set(tracking_id, {
+            'status': 'failed',
+            'message': str(e)
+        })
 
 
 @app.route('/api/generate-mockups-from-labels', methods=['POST'])
 def generate_mockups_from_labels():
-    """Step 2: Generate mockups (blocking) - returns results when complete"""
+    """Step 2: Generate mockups (async) - returns immediately with job_id"""
     import PIL.Image
     from io import BytesIO
 
@@ -3394,13 +3442,19 @@ def generate_mockups_from_labels():
         except (OSError, PermissionError) as e:
             logger.warning(f"Could not cleanup vial file: {e}")
 
-        # Generate mockups (blocking)
-        logger.info(f"Starting mockup generation for {len(labels)} labels")
-        result = _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, labels_job_id, label_crop_data, output_dir)
-        logger.info(f"Mockup generation completed")
+        # Start background task (non-blocking)
+        logger.info(f"[ENDPOINT] Starting background mockup generation for {len(labels)} labels")
+        _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, labels_job_id, label_crop_data, output_dir)
+        logger.info(f"[ENDPOINT] Background task started")
 
-        # Return results directly
-        return jsonify(result)
+        # Return immediately with job_id
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'tracking_id': tracking_id,
+            'status': 'processing',
+            'message': f'Mockup generation started in background for {len(labels)} labels'
+        })
 
     except Exception as e:
         logger.error(f"Error in generate_mockups_from_labels: {e}", exc_info=True)
@@ -4705,4 +4759,4 @@ if __name__ == '__main__':
     # Debug mode from environment variable (default to False for production)
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
 
-    app.run(debug=debug_mode, host='0.0.0.0', port=port)
+    app.run(debug=debug_mode, host='0.0.0.0', port=port, threaded=True)

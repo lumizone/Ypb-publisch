@@ -307,7 +307,8 @@ class AIConverter:
 
         # Remove any remaining glyph <use> elements (backup pattern)
         svg = re.sub(r'<use[^>]*xlink:href="#font_[^"]*"[^>]*/>', '', svg)
-        svg = re.sub(r'<use[^>]*xlink:href="#g[0-9]+"[^>]*/>', '', svg)
+        # COMMENTED OUT: This was removing background shapes too!
+        # svg = re.sub(r'<use[^>]*xlink:href="#g[0-9]+"[^>]*/>', '', svg)
 
         use_count_after = svg.count('<use ')
         logger.info(f"Removed {use_count_before - use_count_after} text glyph <use> elements")
