@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background -->
+    <rect width="400" height="300" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    
+    <!-- Product Name -->
+    <text id="product_name" 
+          x="200" 
+          y="60" 
+          text-anchor="middle" 
+          font-family="Arial, sans-serif" 
+          font-size="28" 
+          font-weight="bold" 
+          fill="#000000">
+        {product_name}
+    </text>
+    
+    <!-- Ingredients -->
+    <text id="ingredients" 
+          x="200" 
+          y="120" 
+          text-anchor="middle" 
+          font-family="Arial, sans-serif" 
+          font-size="14" 
+          fill="#333333">
+        {ingredients}
+    </text>
+    
+    <!-- SKU -->
+    <text id="sku" 
+          x="50" 
+          y="280" 
+          font-family="Arial, sans-serif" 
+          font-size="12" 
+          fill="#666666">
+        SKU: {sku}
+    </text>
+    
+    <!-- Static compliance text (example) -->
+    <text x="200" y="250" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#888888">
+        FOR RESEARCH USE ONLY
+    </text>
+</svg>
