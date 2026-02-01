@@ -24,10 +24,11 @@ class BatchProcessorError(Exception):
 class BatchProcessor:
     """Processes batches of products to generate labels."""
     
-    def __init__(self, template_path: Path, data_source: Path, text_areas: Dict = None):
+    def __init__(self, template_path: Path, data_source: Path, text_areas: Dict = None, text_alignments: Dict = None):
         self.template_path = Path(template_path)
         self.data_source = Path(data_source)
         self.text_areas = text_areas
+        self.text_alignments = text_alignments or {}
         self.parser: Optional[TemplateParser] = None
         self.mapper: Optional[DataMapper] = None
         self.replacer: Optional[TextReplacer] = None
@@ -50,8 +51,8 @@ class BatchProcessor:
             products = self.mapper.load_csv()
             logger.info(f"Loaded {len(products)} products")
             
-            # Initialize replacer with text areas
-            self.replacer = TextReplacer(self.parser, text_areas=self.text_areas)
+            # Initialize replacer with text areas and alignments
+            self.replacer = TextReplacer(self.parser, text_areas=self.text_areas, text_alignments=self.text_alignments)
             
             # Initialize renderer
             self.renderer = Renderer()

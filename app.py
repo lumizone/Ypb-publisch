@@ -3233,8 +3233,10 @@ REFERENCE SOURCE: The label image is your ONLY source. Ignore the expected conte
 # ============== Combined Generator - Two Step Process ==============
 
 @run_in_background
-def _generate_labels_task(job_id, tracking_id, template_path, products, text_areas, output_dir):
+def _generate_labels_task(job_id, tracking_id, template_path, products, text_areas, output_dir, text_alignments=None):
     """Background task for generating labels - runs in separate thread"""
+    if text_alignments is None:
+        text_alignments = {}
     try:
         labels = []
         errors = []
@@ -3281,7 +3283,7 @@ def _generate_labels_task(job_id, tracking_id, template_path, products, text_are
                     writer.writerow(filtered_product)
 
                 # Generate label
-                processor = BatchProcessor(template_path, temp_csv, text_areas=text_areas)
+                processor = BatchProcessor(template_path, temp_csv, text_areas=text_areas, text_alignments=text_alignments)
                 result = processor.process_batch(output_dir=temp_dir, limit=1)
 
                 # Find generated files and copy all formats (SVG, PNG, PDF)
@@ -3452,6 +3454,10 @@ def generate_labels_combined():
         text_areas_str = request.form.get('textAreas', '{}')
         text_areas = json.loads(text_areas_str) if text_areas_str else {}
 
+        text_alignments_str = request.form.get('textAlignments', '{}')
+        text_alignments = json.loads(text_alignments_str) if text_alignments_str else {}
+        logger.info(f"Text alignments: {text_alignments}")
+
         limit = request.form.get('limit')
         limit = int(limit) if limit else None
 
@@ -3540,7 +3546,7 @@ def generate_labels_combined():
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Start background task (non-blocking)
-        _generate_labels_task(job_id, tracking_id, template_path, products, text_areas, output_dir)
+        _generate_labels_task(job_id, tracking_id, template_path, products, text_areas, output_dir, text_alignments)
 
         # Return immediately with job_id
         # #region agent log

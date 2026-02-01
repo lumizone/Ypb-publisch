@@ -2,13 +2,14 @@
 
 Automated label generation and mockup system that takes a designer-approved Adobe Illustrator template and generates production-ready labels for multiple products by replacing only three text fields: product name, ingredients, and SKU.
 
-**Ostatnia aktualizacja:** 29 stycznia 2026 - Modernizacja Gemini API (google-genai SDK)
+**Ostatnia aktualizacja:** 1 lutego 2026 - Text Alignment Control (LEFT/CENTER/RIGHT)
 
 ## Features
 
 ### Label Generation
 - **Template-based generation**: Uses finalized Illustrator templates (SVG/PDF)
 - **Deterministic text replacement**: Only replaces specified fields, preserves all styling
+- **Text alignment control**: Choose LEFT, CENTER, or RIGHT alignment for Product Name and Ingredients
 - **Batch processing**: Generate labels for 60-100+ products in minutes
 - **Print-ready output**: PNG (300 DPI) and PDF (vector) formats
 - **Organized delivery**: All files packaged in structured ZIP archives

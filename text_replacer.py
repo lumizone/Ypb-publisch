@@ -27,11 +27,23 @@ class TextReplacer:
         'ingredients': ['Ingredients', 'ingredients', 'Composition', 'composition'],
     }
 
-    def __init__(self, template_parser: TemplateParser, text_areas: Dict = None):
+    def __init__(self, template_parser: TemplateParser, text_areas: Dict = None, text_alignments: Dict = None):
         self.parser = template_parser
         self.template_path = template_parser.template_path
         self.formatter = TextFormatter()
         self.text_areas = text_areas or {}  # User-defined text areas: {placeholder_name: {x, y, width, height}}
+        self.text_alignments = text_alignments or {}  # User-defined text alignments: {placeholder_name: 'left'|'center'|'right'}
+
+    def _get_text_anchor(self, placeholder_name: str) -> str:
+        """Get SVG text-anchor value based on user-selected alignment."""
+        alignment = self.text_alignments.get(placeholder_name, 'left')
+        # Map alignment to SVG text-anchor values
+        anchor_map = {
+            'left': 'start',
+            'center': 'middle',
+            'right': 'end'
+        }
+        return anchor_map.get(alignment, 'start')
 
     def _get_product_value(self, product_data: Dict[str, str], placeholder_name: str) -> str:
         """Get product value supporting both uppercase and lowercase field names."""
@@ -230,25 +242,32 @@ class TextReplacer:
 
         logger.info(f"Using user-defined area for {placeholder_name}: x={area_x:.1f}, y={area_y:.1f}, w={area_width:.1f}, h={area_height:.1f}")
 
-        # Calculate position - center in user area
-        center_x = area_x + (area_width / 2)
+        # Get text alignment
+        text_anchor = self._get_text_anchor(placeholder_name)
+
+        # Calculate X position based on alignment
+        if text_anchor == 'start':  # left
+            x_pos = area_x
+        elif text_anchor == 'end':  # right
+            x_pos = area_x + area_width
+        else:  # middle (center)
+            x_pos = area_x + (area_width / 2)
+
+        # Calculate Y position
         total_height = line_height * len(lines)
-
         if needs_wrap and len(lines) > 1:
-            # Multi-line: center horizontally and vertically
+            # Multi-line: vertically centered
             padding = max(0, (area_height - total_height) / 2)
-            y_pos = str(area_y + padding + (optimal_font_size * 0.85))
+            y_pos = area_y + padding + (optimal_font_size * 0.85)
         else:
-            # Single line: center both horizontally and vertically
+            # Single line: vertically centered
             center_y = area_y + (area_height / 2)
-            y_pos = str(center_y + (optimal_font_size * 0.35))
-
-        x_pos = str(center_x)
+            y_pos = center_y + (optimal_font_size * 0.35)
 
         # Update element position and style
-        element.set('x', x_pos)
-        element.set('y', y_pos)
-        element.set('text-anchor', 'middle')
+        element.set('x', str(x_pos))
+        element.set('y', str(y_pos))
+        element.set('text-anchor', text_anchor)
 
         # Update font size in style
         style = element.get('style', '')
@@ -263,11 +282,10 @@ class TextReplacer:
 
         # Handle multi-line text with tspan
         if needs_wrap and len(lines) > 1:
-            tspan_x = str(center_x)
             for i, line_text in enumerate(lines):
                 tspan = etree.SubElement(element, ns + 'tspan')
-                tspan.set('x', tspan_x)
-                tspan.set('text-anchor', 'middle')
+                tspan.set('x', str(x_pos))
+                tspan.set('text-anchor', text_anchor)
                 tspan.set('dy', '0' if i == 0 else f'{line_height:.1f}')
                 tspan.text = line_text
             logger.info(f"Created {len(lines)} tspans for multi-line text")
@@ -517,26 +535,36 @@ class TextReplacer:
             optimal_font_size = float(formatted['font_size'])
             line_height = formatted.get('line_height', optimal_font_size * 1.2)
 
-            center_x = area_x + (area_width / 2)
+            # Get text alignment
+            text_anchor = self._get_text_anchor(placeholder_name)
+
+            # Calculate X position based on alignment
+            if text_anchor == 'start':  # left
+                x_pos = area_x
+            elif text_anchor == 'end':  # right
+                x_pos = area_x + area_width
+            else:  # middle (center)
+                x_pos = area_x + (area_width / 2)
+
             total_height = line_height * len(lines)
 
-            new_text_elem.set('text-anchor', 'middle')
+            new_text_elem.set('text-anchor', text_anchor)
             new_text_elem.set('style', f'font-family:{font_family};font-size:{optimal_font_size:.2f}px;fill:{fill};font-weight:{font_weight}')
 
             if len(lines) > 1:
                 padding = max(0, (area_height - total_height) / 2)
                 start_y = area_y + padding + (optimal_font_size * 0.85)
                 new_text_elem.set('y', str(start_y))
-                new_text_elem.set('x', str(center_x))
+                new_text_elem.set('x', str(x_pos))
                 for i, line_text in enumerate(lines):
                     tspan = etree.SubElement(new_text_elem, ns + 'tspan')
-                    tspan.set('x', str(center_x))
-                    tspan.set('text-anchor', 'middle')
+                    tspan.set('x', str(x_pos))
+                    tspan.set('text-anchor', text_anchor)
                     tspan.set('dy', '0' if i == 0 else f'{line_height:.1f}')
                     tspan.text = line_text
             else:
                 y_pos_area = area_y + (area_height / 2) + (optimal_font_size * 0.35)
-                new_text_elem.set('x', str(center_x))
+                new_text_elem.set('x', str(x_pos))
                 new_text_elem.set('y', str(y_pos_area))
                 new_text_elem.text = lines[0] if lines else new_text
 

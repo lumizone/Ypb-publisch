@@ -1,12 +1,75 @@
 # YPBv2 - Label & Mockup Generator
 
-**Status**: ✅ Production Ready (31 stycznia 2026)
+**Status**: ✅ Production Ready (1 lutego 2026)
 **Lokalizacja**: `/Users/lukasz/YPBv2`
 **Port**: http://localhost:8000
 
 ---
 
 ## 🎯 AKTUALNY STAN APLIKACJI
+
+### ✅ Zaimplementowano Text Alignment (01.02.2026)
+
+**Cel**: Kontrola wyrównania tekstu (LEFT/CENTER/RIGHT) dla Product Name i Ingredients
+
+**Implementacja**:
+- ✅ UI: Przyciski LEFT | CENTER | RIGHT w Template Preview
+- ✅ Tylko dla Product Name i Ingredients (SKU bez zmian)
+- ✅ Frontend: `textAlignmentsCombined` object, funkcja `setTextAlignmentCombined()`
+- ✅ Backend: `text_alignments` parameter w całym pipeline
+- ✅ TextReplacer: `_get_text_anchor()` - konwersja left/center/right → start/middle/end
+- ✅ SVG: `text-anchor` attribute + dynamiczne X pozycje
+- ✅ Dokumentacja: Updated Instructions page
+
+**Pliki zmodyfikowane**:
+1. `app_dashboard.html`:
+   - Linie 1119-1157: UI alignment buttons
+   - Linie 2608-2614: textAlignmentsCombined object
+   - Linie 7039-7054: setTextAlignmentCombined() function
+   - Linie 7510: FormData append textAlignments
+   - Linie 1941-1991: Instructions - Text Alignment section
+
+2. `app.py`:
+   - Linie 3454-3457: Parse textAlignments from request
+   - Linie 3547: Pass to _generate_labels_task()
+   - Linie 3236-3238: Function signature update
+
+3. `batch_processor.py`:
+   - Linia 27: __init__ accepts text_alignments
+   - Linia 55: Pass to TextReplacer
+
+4. `text_replacer.py`:
+   - Linia 30-35: __init__ accepts text_alignments
+   - Linia 36-44: _get_text_anchor() helper method
+   - Linia 243-264: Dynamic X position + text-anchor (with user area)
+   - Linia 283-289: Dynamic tspan positioning
+   - Linia 534-568: Dynamic positioning (aria-label elements)
+
+**Weryfikacja**: `./restart.sh` → http://localhost:8000 → Template Preview
+
+**Użycie**:
+```
+1. Upload template + CSV
+2. Draw text areas dla Product Name i Ingredients
+3. Wybierz alignment:
+   - Product Name: LEFT / CENTER / RIGHT
+   - Ingredients: LEFT / CENTER / RIGHT
+4. Generate Labels
+```
+
+**Rezultat SVG**:
+```xml
+<!-- LEFT alignment -->
+<text text-anchor="start" x="area_x">Text</text>
+
+<!-- CENTER alignment (default) -->
+<text text-anchor="middle" x="area_x + width/2">Text</text>
+
+<!-- RIGHT alignment -->
+<text text-anchor="end" x="area_x + width">Text</text>
+```
+
+---
 
 ### ✅ Zaimplementowano Async Mockup Generation (31.01.2026)
 
@@ -35,6 +98,7 @@
 - Upload CSV database (92 produkty)
 - Batch generation: SVG + PNG (300 DPI) + PDF + JPG
 - Intelligent text wrapping & formatting
+- **Text alignment control** (LEFT/CENTER/RIGHT) - NEW 01.02.2026
 - Auto-detection placeholders (`data-placeholder`)
 
 ### 2. **Mockup Generator**
