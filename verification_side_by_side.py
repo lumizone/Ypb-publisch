@@ -281,16 +281,21 @@ Compare the APPEARANCE:
 ✓ Are text colors the same? (black/white/gray/colored text)
 ✓ Are background colors the same?
 ✓ Is font family similar? (serif/sans-serif, script/monospace)
-✓ Is font weight similar? (bold/regular/light)
 ✓ Is font size proportional? (relative sizes match)
-✓ Are text effects preserved? (bold, italic, underline)
 ✓ Is layout similar? (alignment, spacing, positioning)
+
+✓ FONT WEIGHT CHECK:
+  • Is SKU bold on reference? → Should be bold on mockup
+  • Is product name bold on reference? → Should be bold on mockup
+  • Compare font weight (bold vs regular)
 
 Examples of FAILURES:
 ❌ Black text on left, blue text on right - color mismatch
 ❌ Arial font on left, Times New Roman on right - font mismatch
 ❌ Bold text on left, regular text on right - weight mismatch
 ❌ Centered on left, left-aligned on right - alignment mismatch
+
+**IMPORTANT:** Font weight mismatches (bold vs regular) are MAJOR visual differences and should be flagged clearly in the differences list.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 3. READABILITY ON MOCKUP ✓

@@ -265,6 +265,12 @@ class AIConverter:
                     is_bold = bool(flags & 2**4)  # bit 4 = bold
                     is_italic = bool(flags & 2**1)  # bit 1 = italic
 
+                    # ALSO check font name for bold variants (Arial-Black, Arial-Bold, etc.)
+                    # Some PDFs don't set the bold flag but use bold font names
+                    font_name_upper = font.upper()
+                    if any(bold_keyword in font_name_upper for bold_keyword in ['BOLD', 'BLACK', 'HEAVY', 'SEMIBOLD', 'DEMIBOLD']):
+                        is_bold = True
+
                     text_data.append({
                         "text": text,
                         "x": origin[0],
@@ -388,12 +394,12 @@ class AIConverter:
             y = item["y"] * scale
             size = item["size"] * scale
 
-            # Build font style
+            # Build font style - simple 1:1 conversion from original
             font_family = self._clean_font_name(item["font"])
             font_weight = "bold" if item["bold"] else "normal"
             font_style = "italic" if item["italic"] else "normal"
 
-            # Create text element with aria-label for text extraction
+            # Create simple text element - NO artificial enhancements, just preserve original
             elem = (
                 f'<text x="{x:.2f}" y="{y:.2f}" '
                 f'aria-label="{text}" '

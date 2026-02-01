@@ -2985,11 +2985,22 @@ CRITICAL INSTRUCTIONS:
    ✓ If SKU is partial (like "YPB.1" when full is "YPB.111"), keep it partial
    ✓ Match the reference label's cropping/wrapping behavior
 
-3. VISUAL ACCURACY:
+3. VISUAL ACCURACY (CRITICAL - PRESERVE ALL STYLING):
    ✓ Copy exact colors: background color, text colors
-   ✓ Copy exact fonts: family (sans-serif/serif), weight (bold/regular), size (proportions)
+   ✓ Copy exact fonts: family (sans-serif/serif), size (proportions)
+
+   ✓ FONT WEIGHT:
+     • If text is BOLD in reference → make it BOLD in mockup
+     • If text is REGULAR in reference → make it REGULAR in mockup
+     • Preserve the exact visual weight as shown in the reference label
+
    ✓ Copy exact layout: alignment, line spacing, text positioning
    ✓ Apply natural curvature to match vial's cylindrical surface
+
+EXAMPLES OF FONT WEIGHT PRESERVATION:
+   Reference shows "SKU: YPB.111" in BOLD → Mockup MUST show it in BOLD
+   Reference shows "10mg" in REGULAR → Mockup MUST show it in REGULAR
+   Reference shows "Selank" in BOLD → Mockup MUST show it in BOLD
 
 4. TECHNICAL QUALITY:
    ✓ Keep text SHARP and readable (not blurry)
@@ -3122,11 +3133,22 @@ CRITICAL INSTRUCTIONS:
    ✓ If SKU is partial (like "YPB.1" when full is "YPB.111"), keep it partial
    ✓ Match the reference label's cropping/wrapping behavior
 
-3. VISUAL ACCURACY:
+3. VISUAL ACCURACY (CRITICAL - PRESERVE ALL STYLING):
    ✓ Copy exact colors: background color, text colors
-   ✓ Copy exact fonts: family (sans-serif/serif), weight (bold/regular), size (proportions)
+   ✓ Copy exact fonts: family (sans-serif/serif), size (proportions)
+
+   ✓ FONT WEIGHT:
+     • If text is BOLD in reference → make it BOLD in mockup
+     • If text is REGULAR in reference → make it REGULAR in mockup
+     • Preserve the exact visual weight as shown in the reference label
+
    ✓ Copy exact layout: alignment, line spacing, text positioning
    ✓ Apply natural curvature to match vial's cylindrical surface
+
+EXAMPLES OF FONT WEIGHT PRESERVATION:
+   Reference shows "SKU: YPB.111" in BOLD → Mockup MUST show it in BOLD
+   Reference shows "10mg" in REGULAR → Mockup MUST show it in REGULAR
+   Reference shows "Selank" in BOLD → Mockup MUST show it in BOLD
 
 4. TECHNICAL QUALITY:
    ✓ Keep text SHARP and readable (not blurry)
