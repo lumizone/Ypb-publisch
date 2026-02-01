@@ -183,18 +183,139 @@ def requires_auth(f):
     return decorated
 
 
-def add_green_background(image):
+def _detect_dominant_colors(image, max_colors=10):
     """
-    Nanosi zielone tło (green screen) #00FF00 na obraz fiolki.
-    Zawsze używamy czystego (0, 255, 0), żeby usuwanie tła (fallback po kolorze)
-    działało pewnie – fallback wykrywa tylko pure green.
+    Wykrywa dominujące kolory w obrazie.
+    Returns: List of (R, G, B) tuples sorted by frequency
     """
     import PIL.Image
+
+    # Convert to RGB
+    if image.mode == 'RGBA':
+        bg = PIL.Image.new('RGB', image.size, (255, 255, 255))
+        bg.paste(image, mask=image.split()[3])
+        image = bg
+    elif image.mode != 'RGB':
+        image = image.convert('RGB')
+
+    # Resize for faster processing (max 200px)
+    image_small = image.copy()
+    image_small.thumbnail((200, 200), PIL.Image.Resampling.LANCZOS)
+
+    # Get pixels
+    pixels = list(image_small.getdata())
+
+    # Count colors
+    from collections import Counter
+    color_counts = Counter(pixels)
+
+    # Return most common colors
+    dominant = [color for color, count in color_counts.most_common(max_colors)]
+    return dominant
+
+
+def _choose_optimal_background_color(label_image, vial_image=None):
+    """
+    Wybiera optymalny kolor tła który NIE jest obecny w label ani vial.
+
+    Candidate colors (pure, easy to remove):
+    - Green: #00FF00 (RGB 0, 255, 0)
+    - Magenta: #FF00FF (RGB 255, 0, 255)
+    - Cyan: #00FFFF (RGB 0, 255, 255)
+    - Yellow: #FFFF00 (RGB 255, 255, 0)
+    - Blue: #0000FF (RGB 0, 0, 255)
+
+    Returns: (R, G, B) tuple - best background color
+    """
+    import numpy as np
+
+    # Candidate background colors (pure, saturated, easy to remove)
+    candidates = [
+        (0, 255, 0),      # Green (default)
+        (255, 0, 255),    # Magenta
+        (0, 255, 255),    # Cyan
+        (255, 255, 0),    # Yellow
+        (0, 0, 255),      # Blue
+    ]
+
+    # Detect colors in label
+    label_colors = _detect_dominant_colors(label_image, max_colors=50)
+
+    # Detect colors in vial (if provided)
+    vial_colors = []
+    if vial_image:
+        vial_colors = _detect_dominant_colors(vial_image, max_colors=50)
+
+    # Combine all colors to avoid
+    colors_to_avoid = label_colors + vial_colors
+
+    # Calculate minimum distance for each candidate
+    best_color = candidates[0]  # Default: green
+    best_distance = 0
+
+    for candidate in candidates:
+        # Calculate minimum distance to any existing color
+        min_distance = float('inf')
+
+        for existing_color in colors_to_avoid:
+            # Euclidean distance in RGB space
+            distance = np.sqrt(
+                (candidate[0] - existing_color[0]) ** 2 +
+                (candidate[1] - existing_color[1]) ** 2 +
+                (candidate[2] - existing_color[2]) ** 2
+            )
+            min_distance = min(min_distance, distance)
+
+        # Choose candidate with maximum minimum distance (most different)
+        if min_distance > best_distance:
+            best_distance = min_distance
+            best_color = candidate
+
+    color_name = {
+        (0, 255, 0): "Green",
+        (255, 0, 255): "Magenta",
+        (0, 255, 255): "Cyan",
+        (255, 255, 0): "Yellow",
+        (0, 0, 255): "Blue",
+    }.get(best_color, "Unknown")
+
+    logger.info(f"Selected background color: {color_name} RGB{best_color} (min distance to existing colors: {best_distance:.1f})")
+
+    return best_color
+
+
+def add_green_background(image, background_color=None):
+    """
+    Nanosi kolorowe tło na obraz fiolki.
+    Zachowuje przezroczystość oryginalnego obrazu.
+
+    Args:
+        image: PIL Image (może być RGBA)
+        background_color: (R, G, B) tuple or None (default: #00FF00 green)
+
+    Returns: PIL Image (RGB) z kolorowym tłem
+    """
+    import PIL.Image
+
+    if background_color is None:
+        background_color = (0, 255, 0)  # Default: green
+
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
-    result = PIL.Image.new('RGB', image.size, (0, 255, 0))
+
+    result = PIL.Image.new('RGB', image.size, background_color)
     result.paste(image, mask=image.split()[3])
-    logger.info("Applied solid green background (#00FF00) for reliable chroma-key removal")
+
+    color_name = {
+        (0, 255, 0): "Green #00FF00",
+        (255, 0, 255): "Magenta #FF00FF",
+        (0, 255, 255): "Cyan #00FFFF",
+        (255, 255, 0): "Yellow #FFFF00",
+        (0, 0, 255): "Blue #0000FF",
+    }.get(background_color, f"Custom RGB{background_color}")
+
+    logger.info(f"Applied {color_name} background for chroma-key removal")
+
     return result
 
 
@@ -208,6 +329,259 @@ def _aspect_ratio_for_gemini(width, height):
         ("4:5", 4 / 5), ("5:4", 5 / 4), ("9:16", 9 / 16), ("16:9", 16 / 9), ("21:9", 21 / 9),
     ]
     return min(supported, key=lambda x: abs(r - x[1]))[0]
+
+
+def _extract_label_color_palette(label_image, max_colors=50):
+    """
+    Extract unique color palette from label image.
+    Returns list of RGB tuples representing label colors.
+    """
+    import PIL.Image
+    import numpy as np
+    from collections import Counter
+
+    # Convert to RGB if needed
+    if label_image.mode == 'RGBA':
+        # Composite onto white to get actual rendered colors
+        bg = PIL.Image.new('RGB', label_image.size, (255, 255, 255))
+        bg.paste(label_image, mask=label_image.split()[-1])
+        label_rgb = bg
+    elif label_image.mode != 'RGB':
+        label_rgb = label_image.convert('RGB')
+    else:
+        label_rgb = label_image
+
+    # Get all pixels
+    pixels = np.array(label_rgb)
+    h, w, _ = pixels.shape
+
+    # Flatten to list of RGB tuples
+    flat_pixels = pixels.reshape(-1, 3)
+
+    # Count occurrences of each color
+    color_counts = Counter(map(tuple, flat_pixels))
+
+    # Get most common colors (these are the label's color palette)
+    most_common_colors = [color for color, count in color_counts.most_common(max_colors)]
+
+    logger.info(f"Extracted {len(most_common_colors)} colors from label palette")
+    logger.debug(f"Top 5 label colors: {most_common_colors[:5]}")
+
+    return most_common_colors
+
+
+def _smart_color_comparison_removal(mockup_image, label_reference):
+    """
+    SMART background removal using color comparison.
+
+    Algorithm:
+    1. Extract color palette from reference label
+    2. For each pixel in mockup:
+       - Calculate distance to pure green (#00FF00)
+       - Calculate distance to nearest label color
+       - Decide: keep if closer to label, remove if closer to green screen
+    3. Use alpha channel as additional factor
+
+    This preserves ALL label colors (including #ccdc34) while removing green screen.
+    """
+    import PIL.Image
+    import numpy as np
+
+    try:
+        logger.info("Starting SMART color comparison removal")
+
+        # Extract label color palette
+        label_palette = _extract_label_color_palette(label_reference, max_colors=100)
+
+        # Convert mockup to RGBA if needed
+        if mockup_image.mode != 'RGBA':
+            mockup_image = mockup_image.convert('RGBA')
+
+        # Get pixel data
+        data = np.array(mockup_image)
+        rgb = data[:, :, :3].astype(np.float32)
+        alpha = data[:, :, 3].astype(np.float32)
+
+        r = rgb[:, :, 0]
+        g = rgb[:, :, 1]
+        b = rgb[:, :, 2]
+
+        # Pure green screen reference
+        green_screen = np.array([0, 255, 0], dtype=np.float32)
+
+        # Calculate distance to green screen for each pixel
+        dist_to_green = np.sqrt(
+            (r - green_screen[0]) ** 2 +
+            (g - green_screen[1]) ** 2 +
+            (b - green_screen[2]) ** 2
+        )
+
+        # Calculate minimum distance to any label color for each pixel
+        dist_to_label = np.full_like(dist_to_green, float('inf'))
+
+        for label_color in label_palette:
+            lr, lg, lb = label_color
+            dist = np.sqrt(
+                (r - lr) ** 2 +
+                (g - lg) ** 2 +
+                (b - lb) ** 2
+            )
+            dist_to_label = np.minimum(dist_to_label, dist)
+
+        # ULTRA-AGGRESSIVE: Remove ALL green, protect ONLY exact label colors
+        should_remove = np.zeros(alpha.shape, dtype=bool)
+
+        # RULE 1: ANY green dominance → REMOVE
+        has_green_tint = (g > r + 15) | (g > b + 15)
+        should_remove |= has_green_tint
+
+        # RULE 2: Close to pure green → REMOVE (extra aggressive)
+        should_remove |= (dist_to_green < 100)
+
+        # RULE 3: Semi-transparent + any greenish → REMOVE
+        should_remove |= (alpha < 250) & ((g > r + 5) | (g > b + 5))
+
+        # PROTECTION: ONLY protect if VERY close to label color (exact match basically)
+        # This is very strict - only distances < 15 are protected
+        exact_label_match = (dist_to_label < 15)
+        should_remove &= ~exact_label_match
+
+        # Log some stats for debugging
+        green_tint_count = has_green_tint.sum()
+        protected_count = exact_label_match.sum()
+        logger.debug(f"Green tint pixels: {green_tint_count}, Protected (exact label): {protected_count}")
+
+        # Apply removal
+        alpha[should_remove] = 0
+
+        # Statistics
+        total_pixels = alpha.size
+        removed_pixels = should_remove.sum()
+        removal_pct = (removed_pixels / total_pixels) * 100
+
+        logger.info(f"Smart removal: {removed_pixels}/{total_pixels} pixels ({removal_pct:.1f}%)")
+
+        # Create output image
+        output_data = data.copy()
+        output_data[:, :, 3] = alpha.astype(np.uint8)
+        output_image = PIL.Image.fromarray(output_data, mode='RGBA')
+
+        return output_image
+
+    except Exception as e:
+        logger.error(f"Smart color comparison removal failed: {e}", exc_info=True)
+        # Fallback: return original
+        return mockup_image
+
+
+def _aggressive_background_cleanup(image, background_color=None):
+    """
+    ULTRA AGRESYWNE czyszczenie tła po rembg.
+
+    Usuwa:
+    1. Wszystkie pozostałości background_color (większy threshold)
+    2. Semi-transparent pixels near transparent areas (expand transparency)
+    3. Low-opacity pixels (alpha < 50)
+    4. Edge artifacts and halos
+
+    Args:
+        image: PIL Image (RGBA) - after rembg
+        background_color: (R, G, B) tuple - color to remove aggressively
+
+    Returns:
+        PIL Image (RGBA) - with aggressively cleaned background
+    """
+    import PIL.Image
+    import numpy as np
+
+    try:
+        if background_color is None:
+            background_color = (0, 255, 0)  # Default: green
+
+        logger.info(f"Starting AGGRESSIVE background cleanup for color RGB{background_color}")
+
+        # Convert to numpy
+        data = np.array(image)
+        rgb = data[:, :, :3].astype(np.float32)
+        alpha = data[:, :, 3].astype(np.float32)
+
+        r, g, b = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+        target_r, target_g, target_b = background_color
+
+        # === STRATEGY 1: Remove similar colors (AGGRESSIVE threshold) ===
+        color_distance = np.sqrt(
+            (r - target_r) ** 2 +
+            (g - target_g) ** 2 +
+            (b - target_b) ** 2
+        )
+        # AGGRESSIVE: increased from 70 to 100
+        similar_to_bg = color_distance < 100
+
+        # === STRATEGY 2: Remove low-opacity pixels (semi-transparent = likely artifacts) ===
+        low_opacity = alpha < 50  # Remove anything with alpha < 50
+
+        # === STRATEGY 3: Remove green-ish pixels (for green backgrounds) ===
+        if background_color == (0, 255, 0):  # Green
+            greenish = (g > r + 20) & (g > b + 20) & (g > 80)
+        elif background_color == (255, 0, 255):  # Magenta
+            magentaish = (r > g + 20) & (b > g + 20) & ((r + b) / 2 > 100)
+            greenish = magentaish
+        elif background_color == (0, 255, 255):  # Cyan
+            cyanish = (g > r + 20) & (b > r + 20) & ((g + b) / 2 > 100)
+            greenish = cyanish
+        elif background_color == (255, 255, 0):  # Yellow
+            yellowish = (r > b + 20) & (g > b + 20) & ((r + g) / 2 > 100)
+            greenish = yellowish
+        elif background_color == (0, 0, 255):  # Blue
+            blueish = (b > r + 20) & (b > g + 20) & (b > 100)
+            greenish = blueish
+        else:
+            greenish = np.zeros_like(alpha, dtype=bool)
+
+        # === STRATEGY 4: Expand transparency (erode edges with background color) ===
+        try:
+            from scipy import ndimage
+
+            # Find transparent areas
+            transparent_mask = (alpha == 0)
+
+            # Dilate (expand) transparent areas by 3 pixels
+            dilated_transparent = ndimage.binary_dilation(transparent_mask, iterations=3)
+
+            # Remove pixels near transparent areas if they match background
+            edge_artifacts = dilated_transparent & (alpha > 0) & (
+                similar_to_bg | greenish | low_opacity
+            )
+
+            logger.info(f"Expanded transparency by 3 pixels, found {np.sum(edge_artifacts)} edge artifacts")
+        except ImportError:
+            edge_artifacts = np.zeros_like(alpha, dtype=bool)
+
+        # === COMBINE ALL REMOVAL STRATEGIES ===
+        pixels_to_remove = similar_to_bg | low_opacity | greenish | edge_artifacts
+
+        # Set alpha to 0 for removed pixels
+        alpha[pixels_to_remove] = 0
+
+        # Clean RGB for transparent pixels
+        transparent = (alpha == 0)
+        rgb[transparent] = [0, 0, 0]
+
+        # Apply changes
+        data[:, :, 3] = np.clip(alpha, 0, 255).astype(np.uint8)
+        data[:, :, :3] = np.clip(rgb, 0, 255).astype(np.uint8)
+
+        cleaned_image = PIL.Image.fromarray(data, 'RGBA')
+
+        pixels_removed = np.sum(pixels_to_remove)
+        total_pixels = alpha.size
+        logger.info(f"AGGRESSIVE cleanup removed {pixels_removed} pixels ({100*pixels_removed/total_pixels:.1f}%)")
+
+        return cleaned_image
+
+    except Exception as e:
+        logger.error(f"AGGRESSIVE cleanup failed: {e}", exc_info=True)
+        return image  # Return original if cleanup fails
 
 
 def _remove_green_halo_and_cleanup(image):
@@ -357,7 +731,7 @@ def _remove_green_halo_and_cleanup(image):
         
         # === USUŃ ZIELONE PIKSELE ===
         alpha[green_to_remove] = 0
-        
+
         # === CZYSZCZENIE RGB ===
         transparent_pixels = (alpha == 0)
         rgb[transparent_pixels] = [0, 0, 0]
@@ -446,14 +820,26 @@ def _load_label_image(label_path):
         raise ValueError(f"Cannot load label image: {str(e)}")
 
 
-def remove_background_with_reference(result_image, vial_reference):
+def remove_background_with_reference(result_image, vial_reference, label_reference=None, background_color=None):
     """
-    Usuwa tło z obrazu wynikowego używając rembg (AI-based background removal).
-    Jeśli rembg nie jest dostępny lub nie zadziała, używa fallback metody opartej na wykrywaniu kolorów.
+    Usuwa tło z obrazu wynikowego używając rembg lub color-based removal.
+
+    Args:
+        result_image: PIL Image - mockup z kolorowym tłem
+        vial_reference: PIL Image - oryginalny obraz fiolki (unused currently)
+        label_reference: PIL Image - oryginalny label (unused currently)
+        background_color: (R, G, B) tuple - kolor tła do usunięcia (default: green #00FF00)
+
+    Returns:
+        PIL Image (RGBA) - mockup bez tła
+
+    Process:
+        1. Try rembg (AI-based) first - best quality
+        2. Fallback: Color-based removal for specific background_color
     """
     import PIL.Image
-    
-    # === PRÓBA UŻYCIA REMBG (AI-based background removal) ===
+
+    # === TRY REMBG FIRST (AI-based - best quality) ===
     if HAS_REMBG and rembg_remove is not None:
         try:
             logger.info("Attempting to use rembg for AI-based background removal")
@@ -478,10 +864,10 @@ def remove_background_with_reference(result_image, vial_reference):
                 if output_image.mode != 'RGBA':
                     output_image = output_image.convert('RGBA')
                 
-                # === POST-PROCESSING: Usuń pozostałości zielonego tła i poświatę ===
-                output_image = _remove_green_halo_and_cleanup(output_image)
-                
-                logger.info(f"Successfully removed background using rembg. Image mode: {output_image.mode}, size: {output_image.size}")
+                # === POST-PROCESSING: AGRESYWNE czyszczenie pozostałości tła ===
+                output_image = _aggressive_background_cleanup(output_image, background_color)
+
+                logger.info(f"Successfully removed background using rembg + aggressive cleanup. Image mode: {output_image.mode}, size: {output_image.size}")
                 return output_image
             else:
                 raise ValueError("rembg returned empty result")
@@ -490,34 +876,49 @@ def remove_background_with_reference(result_image, vial_reference):
             logger.warning(f"rembg failed: {e}. Falling back to color-based method.", exc_info=True)
             # Kontynuuj do fallback metody
     
-    # === FALLBACK: ORYGINALNA METODA OPARTA NA WYKRYWANIU KOLORÓW ===
+    # === FALLBACK: METODA OPARTA NA WYKRYWANIU KOLORÓW ===
     try:
-        logger.info("Using fallback color-based background removal method")
-        
+        if background_color is None:
+            background_color = (0, 255, 0)  # Default: green
+
+        color_name = {
+            (0, 255, 0): "Green #00FF00",
+            (255, 0, 255): "Magenta #FF00FF",
+            (0, 255, 255): "Cyan #00FFFF",
+            (255, 255, 0): "Yellow #FFFF00",
+            (0, 0, 255): "Blue #0000FF",
+        }.get(background_color, f"Custom RGB{background_color}")
+
+        logger.info(f"Using fallback color-based background removal for {color_name}")
+
         # Konwertuj obraz do RGBA
         if result_image.mode != 'RGBA':
             result_image = result_image.convert('RGBA')
-        
+
         # Konwertuj do numpy array
         data = np.array(result_image)
         rgb = data[:, :, :3]
         alpha = data[:, :, 3]
-        
-        r = rgb[:, :, 0]  # Czerwony kanał
-        g = rgb[:, :, 1]  # Zielony kanał
-        b = rgb[:, :, 2]  # Niebieski kanał
-        
-        # === WYKRYWANIE ZIELONEGO TŁA ===
-        # Green screen #00FF00; lekko poszerzone progi na kompresję / lekki odcień z modelu
-        is_pure_green = (
-            (r < 60) &      # niski czerwony
-            (g > 190) &     # wysoki zielony
-            (b < 60)        # niski niebieski
+
+        r = rgb[:, :, 0]
+        g = rgb[:, :, 1]
+        b = rgb[:, :, 2]
+
+        # === WYKRYWANIE KOLOROWEGO TŁA ===
+        # Target color with tolerance for compression/slight variations
+        target_r, target_g, target_b = background_color
+
+        # Calculate distance from target background color
+        color_distance = np.sqrt(
+            (r - target_r) ** 2 +
+            (g - target_g) ** 2 +
+            (b - target_b) ** 2
         )
-        green_distance = np.sqrt((r - 0) ** 2 + (g - 255) ** 2 + (b - 0) ** 2)
-        is_close_to_pure_green = green_distance < 70
-        
-        green_background = is_pure_green & is_close_to_pure_green
+
+        # Pixels close to background color (AGGRESSIVE threshold: 100, was: 70)
+        is_background = color_distance < 100
+
+        logger.info(f"Detected {np.sum(is_background)} background pixels to remove (aggressive threshold=100)")
         
         # === WYKRYWANIE BIAŁEGO TŁA ===
         # Białe tło: wszystkie kanały RGB są bardzo wysokie i podobne
@@ -590,25 +991,25 @@ def remove_background_with_reference(result_image, vial_reference):
                 is_foreground = is_vial_part | vial_visible
                 
                 # NIE usuwaj części fiolki - usuń tylko tło które NIE jest częścią fiolki
-                background_to_remove = (green_background | checkerboard_mask) & ~is_foreground
+                background_to_remove = (is_background | checkerboard_mask) & ~is_foreground
                 
                 logger.info(f"Using vial reference: {np.sum(is_foreground)} pixels identified as vial/foreground")
             except Exception as e:
                 logger.warning(f"Failed to use vial reference: {e}, using simple background removal")
                 # Fallback: użyj prostej metody
-                background_to_remove = green_background | checkerboard_mask
+                background_to_remove = is_background | checkerboard_mask
         else:
             # Jeśli nie ma referencji, użyj prostej metody
             background_to_remove = green_background | checkerboard_mask
         
         # Policz ile pikseli zostanie usuniętych (do logowania)
         pixels_to_remove = np.sum(background_to_remove)
-        green_pixels = np.sum(green_background)
+        bg_color_pixels = np.sum(is_background)
         white_pixels = np.sum(white_background)
         checkerboard_pixels = np.sum(checkerboard_mask)
         total_pixels = background_to_remove.size
         
-        logger.info(f"Detected: {green_pixels} green, {white_pixels} white, {checkerboard_pixels} checkerboard pixels")
+        logger.info(f"Detected: {bg_color_pixels} background color, {white_pixels} white, {checkerboard_pixels} checkerboard pixels")
         logger.info(f"After vial reference filtering: {pixels_to_remove} pixels to remove out of {total_pixels} ({100*pixels_to_remove/total_pixels:.1f}%)")
         
         # Sprawdź czy w ogóle są jakieś nieprzezroczyste piksele przed usunięciem
@@ -2465,34 +2866,24 @@ def generate_mockup():
                     'verification_errors': verification_errors
                 }), 500
 
-            # Save image WITH green background first (for preview)
-            result_with_green_bg_filename = f"mockup_with_bg_{sku}_{timestamp}.png"
-            result_with_green_bg_path = config.OUTPUT_DIR / result_with_green_bg_filename
-            result_image.save(str(result_with_green_bg_path), 'PNG')
-            logger.info(f"Saved image with green background to {result_with_green_bg_path}")
-
-            # Remove background using original vial as reference
-            result_image_no_bg = remove_background_with_reference(result_image, vial_image)
+            # result_image already has background removed by _generate_mockup_for_product_with_retry()
+            # Ensure RGBA for transparency
+            if result_image.mode != 'RGBA':
+                result_image = result_image.convert('RGBA')
 
             # Save final result
             output_filename = f"mockup_{sku}_{timestamp}.png"
             output_path = config.OUTPUT_DIR / output_filename
 
-            # Ensure RGBA for transparency
-            if result_image_no_bg.mode != 'RGBA':
-                result_image_no_bg = result_image_no_bg.convert('RGBA')
-
-            result_image_no_bg.save(str(output_path), 'PNG')
+            result_image.save(str(output_path), 'PNG')
             logger.info(f"[Mockup] Saved mockup to {output_path}")
 
-            # Return result URLs
+            # Return result URL
             result_url = f'/api/mockup-result/{output_filename}'
-            result_with_bg_url = f'/api/mockup-result/{result_with_green_bg_filename}'
 
             return jsonify({
                 'success': True,
-                'result_url': result_with_bg_url,  # Image with green background
-                'finished_result_url': result_url,  # Image without background
+                'result_url': result_url,  # Final mockup without background
                 'filename': output_filename,
                 'attempts': attempts,
                 'verified': is_valid
@@ -2553,8 +2944,11 @@ def _generate_mockup_for_product_with_retry(vial_image, label_image, product_nam
         from google import genai
         from google.genai import types
 
-        # Apply green background to vial
-        vial_image_with_green_bg = add_green_background(vial_image)
+        # Choose optimal background color (avoid colors in label/vial)
+        optimal_bg_color = _choose_optimal_background_color(label_image, vial_image)
+
+        # Apply background with optimal color
+        vial_image_with_green_bg = add_green_background(vial_image, optimal_bg_color)
 
         # Build prompt with retry hint if provided
         retry_section = ""
@@ -2566,23 +2960,44 @@ def _generate_mockup_for_product_with_retry(vial_image, label_image, product_nam
 You MUST fix these issues in this attempt. Read the text from the label image VERY CAREFULLY and reproduce it EXACTLY.
 """
 
-        prompt = f"""Replace the label on the vial image with the label design from the label image.
+        prompt = f"""Apply this label design to the pharmaceutical vial. The label will wrap around the cylindrical vial surface.
+
 {retry_section}
-Product name that MUST appear on the mockup: {product_name}
-Dosage/Ingredients that MUST appear: {dosage}
-SKU that MUST appear: {sku}
+Expected content (reference only - READ FROM LABEL IMAGE, NOT THIS TEXT):
+- Product: {product_name}
+- Formula: {dosage if dosage else '(see label)'}
+- Code: {sku}
 
-CRITICAL REQUIREMENTS - MUST FOLLOW:
-1. TEXT PRESERVATION: The product name "{product_name}" MUST be clearly visible and spelled EXACTLY as shown
-2. SKU PRESERVATION: The SKU "{sku}" MUST appear exactly as specified
-3. INGREDIENTS/DOSAGE: "{dosage}" must be preserved exactly
-4. LABEL DESIGN: Use the EXACT label design from the label image - copy ALL text, colors, fonts exactly
-5. NO CHANGES TO TEXT: Do NOT modify, abbreviate, or change ANY text on the label
-6. GREEN BACKGROUND: Keep the green background (#00FF00) exactly as in the vial image
-7. DO NOT ALTER VIAL: Preserve the exact vial shape, proportions, and structure. Only replace the label.
-8. HIGH QUALITY: Sharp details, professional quality, realistic lighting and perspective
+CRITICAL INSTRUCTIONS:
 
-IMPORTANT: The label image shows the EXACT text that must appear. Copy it character-by-character. Do not generate or imagine text - READ it from the label image."""
+1. TEXT PRESERVATION (HIGHEST PRIORITY):
+   ✓ Read ALL text from the label image character-by-character
+   ✓ Preserve EVERY letter, number, symbol, space exactly as shown
+   ✓ Keep punctuation: parentheses (), slashes /, hyphens -, periods .
+   ✓ Preserve number formats: "10mg" stays "10mg", "10 mg" stays "10 mg"
+   ✓ Maintain exact spelling: if label shows "GHRP-2 (5mg)" write "GHRP-2 (5mg)"
+   ✓ Do NOT add, remove, or change ANY characters
+
+2. POSITIONING & CROPPING:
+   ✓ Label may wrap around vial - some text at edges may be partially visible or cut off
+   ✓ This is NORMAL and CORRECT for cylindrical vials
+   ✓ If edge text appears cut (like "RESEARCH USE ON..." → "RESEARCH USE"), keep it cut
+   ✓ If SKU is partial (like "YPB.1" when full is "YPB.111"), keep it partial
+   ✓ Match the reference label's cropping/wrapping behavior
+
+3. VISUAL ACCURACY:
+   ✓ Copy exact colors: background color, text colors
+   ✓ Copy exact fonts: family (sans-serif/serif), weight (bold/regular), size (proportions)
+   ✓ Copy exact layout: alignment, line spacing, text positioning
+   ✓ Apply natural curvature to match vial's cylindrical surface
+
+4. TECHNICAL QUALITY:
+   ✓ Keep text SHARP and readable (not blurry)
+   ✓ Maintain high resolution
+   ✓ Natural lighting and shadows
+   ✓ Preserve vial shape and proportions
+
+REFERENCE SOURCE: The label image is your ONLY source. Ignore the expected content text above - READ from the image."""
 
         logger.info(f"Generating mockup for {product_name} (SKU: {sku}) {'[RETRY]' if retry_hint else ''}")
 
@@ -2626,8 +3041,8 @@ IMPORTANT: The label image shows the EXACT text that must appear. Copy it charac
             logger.warning(f"Gemini API did not return image for {sku}")
             return None
 
-        # Remove green background using SMART method (preserves label colors like #ccdc34)
-        result_image = remove_background_with_reference(result_image, vial_image)
+        # Remove background (using optimal color selected earlier)
+        result_image = remove_background_with_reference(result_image, vial_image, label_reference=label_image, background_color=optimal_bg_color)
 
         logger.info(f"[MOCKUP GEN] Final mockup for {sku}: mode={result_image.mode}, size={result_image.size}")
         return result_image
@@ -2659,8 +3074,11 @@ def _generate_mockup_for_product(vial_image, label_image, product_name, sku, dos
         from google import genai
         from google.genai import types
 
-        # Apply green background to vial
-        vial_image_with_green_bg = add_green_background(vial_image)
+        # Choose optimal background color (avoid colors in label/vial)
+        optimal_bg_color = _choose_optimal_background_color(label_image, vial_image)
+
+        # Apply background with optimal color
+        vial_image_with_green_bg = add_green_background(vial_image, optimal_bg_color)
 
         # Apply label crop if specified (crop label to selected area)
         if label_crop_data:
@@ -2680,23 +3098,43 @@ def _generate_mockup_for_product(vial_image, label_image, product_name, sku, dos
                 logger.info(f"Cropped label to {crop_width}x{crop_height} at ({crop_x}, {crop_y})")
 
         # Prepare prompt
-        prompt = f"""Replace the label on the vial image with the label design from the label image.
+        prompt = f"""Apply this label design to the pharmaceutical vial. The label will wrap around the cylindrical vial surface.
 
-Product name: {product_name}
-Dosage: {dosage}
-SKU: {sku}
+Expected content (reference only - READ FROM LABEL IMAGE, NOT THIS TEXT):
+- Product: {product_name}
+- Formula: {dosage if dosage else '(see label)'}
+- Code: {sku}
 
-CRITICAL REQUIREMENTS:
-1. PRESERVE LABEL DESIGN: Use the EXACT label design from the label image - do NOT change any colors, fonts, or text styling
-2. PRESERVE ALL COLORS: Keep ALL text colors, background colors, and design elements EXACTLY as they appear in the label image
-3. PRESERVE TEXT STYLING: Maintain the exact font colors, sizes, and positions from the original label design
-4. GREEN BACKGROUND: Keep the green background (#00FF00) exactly as it appears in the vial image - do NOT remove or change it
-5. DO NOT ALTER VIAL: Preserve the exact vial shape, proportions, and structure. Only replace the label.
-6. HIGH QUALITY: Ensure sharp details, professional Photoshop-level quality
-7. REALISTIC PLACEMENT: Match the lighting, perspective, and curvature of the original vial
-8. NO MODIFICATIONS: Do NOT modify, recolor, or redesign any part of the label - use it AS-IS
+CRITICAL INSTRUCTIONS:
 
-The label image contains the final, approved design with correct colors and styling. Apply it to the vial WITHOUT any changes."""
+1. TEXT PRESERVATION (HIGHEST PRIORITY):
+   ✓ Read ALL text from the label image character-by-character
+   ✓ Preserve EVERY letter, number, symbol, space exactly as shown
+   ✓ Keep punctuation: parentheses (), slashes /, hyphens -, periods .
+   ✓ Preserve number formats: "10mg" stays "10mg", "10 mg" stays "10 mg"
+   ✓ Maintain exact spelling: if label shows "GHRP-2 (5mg)" write "GHRP-2 (5mg)"
+   ✓ Do NOT add, remove, or change ANY characters
+
+2. POSITIONING & CROPPING:
+   ✓ Label may wrap around vial - some text at edges may be partially visible or cut off
+   ✓ This is NORMAL and CORRECT for cylindrical vials
+   ✓ If edge text appears cut (like "RESEARCH USE ON..." → "RESEARCH USE"), keep it cut
+   ✓ If SKU is partial (like "YPB.1" when full is "YPB.111"), keep it partial
+   ✓ Match the reference label's cropping/wrapping behavior
+
+3. VISUAL ACCURACY:
+   ✓ Copy exact colors: background color, text colors
+   ✓ Copy exact fonts: family (sans-serif/serif), weight (bold/regular), size (proportions)
+   ✓ Copy exact layout: alignment, line spacing, text positioning
+   ✓ Apply natural curvature to match vial's cylindrical surface
+
+4. TECHNICAL QUALITY:
+   ✓ Keep text SHARP and readable (not blurry)
+   ✓ Maintain high resolution
+   ✓ Natural lighting and shadows
+   ✓ Preserve vial shape and proportions
+
+REFERENCE SOURCE: The label image is your ONLY source. Ignore the expected content text above - READ from the image."""
 
         logger.info(f"Generating mockup for {product_name} (SKU: {sku}) using Gemini API ({config.GEMINI_MOCKUP_MODEL})")
 
@@ -2756,8 +3194,8 @@ The label image contains the final, approved design with correct colors and styl
                 label_rgba = label_resized.convert('RGBA')
                 result_image.paste(label_rgba, position, label_rgba)
 
-        # Remove background using original vial as reference
-        result_image = remove_background_with_reference(result_image, vial_image)
+        # Remove background (using optimal color selected earlier)
+        result_image = remove_background_with_reference(result_image, vial_image, background_color=optimal_bg_color)
 
         # Ensure RGBA mode
         if result_image.mode != 'RGBA':

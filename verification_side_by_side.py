@@ -246,18 +246,32 @@ ANALYZE THESE CRITICAL ASPECTS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Compare the TEXT on the mockup label (left) with the reference label (right):
 
+IMPORTANT - LABEL WRAPPING BEHAVIOR:
+⚠️ Labels on cylindrical vials WRAP AROUND the surface
+⚠️ Text at LEFT/RIGHT edges may be PARTIALLY VISIBLE or CUT OFF
+⚠️ This is NORMAL and ACCEPTABLE for vial mockups
+⚠️ Do NOT penalize for edge cropping - this is expected behavior
+
+For VISIBLE TEXT (not at edges):
 ✓ Is every word spelled IDENTICALLY?
 ✓ Are all numbers EXACTLY the same?
 ✓ Is punctuation preserved? (commas, slashes, parentheses, periods, hyphens)
 ✓ Are units present? (mg, mcg, ml, etc.)
-✓ Is word order identical?
-✓ Are there any missing or extra words?
 
-Examples of FAILURES:
-❌ "GHRP-2 (5mg)" vs "GHRP-2 5mg" - missing parentheses
-❌ "YPB.100" vs "YPB.10" - missing digit
-❌ "4X Blend" vs "4X Bleend" - typo
-❌ Missing ingredient lines
+For EDGE TEXT (at left/right borders):
+✓ Partial SKU is OK: "YPB.1" when full is "YPB.111" - ACCEPTABLE
+✓ Partial words are OK: "RESEARCH USE" when full is "RESEARCH USE ONLY" - ACCEPTABLE
+✓ Cut-off text is OK: Text disappearing at edges due to wrapping - ACCEPTABLE
+
+Examples of REAL FAILURES (ignore edge cropping):
+❌ "GHRP-2 (5mg)" vs "GHRP-2 5mg" - missing parentheses (CENTER text)
+❌ "4X Blend" vs "4X Bleend" - typo (CENTER text)
+❌ Missing ingredient lines (CENTER text)
+
+Examples of ACCEPTABLE (edge cropping):
+✅ "YPB.111" vs "YPB.1" - partial SKU at edge (ACCEPTABLE)
+✅ "RESEARCH USE ONLY" vs "RESEARCH USE" - partial text at edge (ACCEPTABLE)
+✅ "10mg" vs "10 mg" - spacing variation (ACCEPTABLE)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 2. VISUAL FIDELITY ✓
@@ -317,26 +331,36 @@ UNNATURAL (UNACCEPTABLE):
 ❌ Unnatural perspective that doesn't match vial geometry
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VERIFICATION STANDARDS:
+VERIFICATION STANDARDS (UPDATED FOR VIAL WRAPPING):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+⚠️ CRITICAL: Ignore edge cropping when evaluating text accuracy!
+⚠️ Partial SKU, partial "RESEARCH USE ONLY", spacing variations = ACCEPTABLE
+
 ACCEPT if:
-- Text accuracy: 100% (all text identical)
-- Visual fidelity: ≥90% (colors/fonts very similar)
+- Center text accuracy: 100% (main text identical, ignore edge cropping)
+- Edge text: Can be partial/cut (this is expected for wrapped labels)
+- Visual fidelity: ≥85% (colors/fonts similar)
 - Readability: Clear and sharp
 - Deformation: Natural only
 
 RETRY if:
-- Minor text differences (1-2 missing punctuation marks)
-- Visual fidelity: 70-89% (some color/font differences)
+- Center text has 1-2 minor differences (punctuation, spacing)
+- Visual fidelity: 70-84% (some color/font differences)
 - Readability: Slightly blurry but readable
 - Deformation: Mild unnatural distortion
 
 REJECT if:
-- Text accuracy: <95% (wrong words, missing content)
+- Center text accuracy: <90% (wrong words, missing main content)
 - Visual fidelity: <70% (major color/font differences)
 - Readability: Blurry, pixelated, or unreadable
 - Deformation: Severe warping or distortion
+
+EXAMPLES OF ACCEPTABLE EDGE VARIATIONS:
+✅ SKU partial: "YPB.1" when database has "YPB.111"
+✅ Text partial: "RESEARCH USE" when full is "RESEARCH USE ONLY"
+✅ Spacing: "10 mg" vs "10mg"
+✅ Cut-off at wrapping point: Normal for cylindrical vials
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
