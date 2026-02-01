@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python311", "cairo", "pango", "gdk-pixbuf", "librsvg"]
+nixPkgs = ["python311", "cairo", "pango", "gdk-pixbuf", "librsvg", "libxml2", "libxslt", "zlib"]
 
 [start]
 cmd = "python app.py"
