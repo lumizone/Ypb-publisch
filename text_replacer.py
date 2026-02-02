@@ -604,22 +604,40 @@ class TextReplacer:
             else:
                 display_text = new_text
 
-            # Use dominant-baseline="hanging" so y coordinate aligns to TOP of text (like paths)
-            # This prevents the baseline shift that causes position changes
+            # DON'T use dominant-baseline (not supported on Railway)
+            # Instead: use ABSOLUTE positioning with manual baseline offset
             if transform:
-                new_text_elem.set('transform', transform)
-                new_text_elem.set('x', '0')
-                new_text_elem.set('y', '0')
+                # Parse transform matrix to get actual position
+                # matrix(a,b,c,d,e,f) where e=translateX, f=translateY
+                import re
+                matrix_match = re.search(r'matrix\s*\(\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*([^,\)]+)\)', transform)
+                if matrix_match:
+                    translate_x = float(matrix_match.group(5))
+                    translate_y = float(matrix_match.group(6))
+
+                    # Extract font size to calculate baseline offset
+                    font_size_value = float(font_size.replace('px','').replace('pt','')) if isinstance(font_size, str) else float(font_size)
+
+                    # Text baseline is ~85% down from top of em-square
+                    # Paths are positioned from top-left, so we add baseline offset
+                    baseline_offset = font_size_value * 0.85
+
+                    new_text_elem.set('x', str(translate_x))
+                    new_text_elem.set('y', str(translate_y + baseline_offset))
+                    logger.info(f"{placeholder_name}: absolute position ({translate_x:.1f}, {translate_y + baseline_offset:.1f}), baseline_offset={baseline_offset:.1f}px")
+                else:
+                    # Fallback: use x,y from placeholder_info
+                    new_text_elem.set('x', str(x_pos))
+                    new_text_elem.set('y', str(y_pos))
+                    logger.info(f"{placeholder_name}: fallback position ({x_pos}, {y_pos})")
             else:
                 new_text_elem.set('x', str(x_pos))
                 new_text_elem.set('y', str(y_pos))
+                logger.info(f"{placeholder_name}: no transform, position ({x_pos}, {y_pos})")
 
-            # CRITICAL: Use dominant-baseline="hanging" to match path positioning
-            new_text_elem.set('dominant-baseline', 'hanging')
             new_text_elem.set('style', f'font-family:{font_family};font-size:{font_size};fill:{fill};font-weight:{font_weight}')
             new_text_elem.text = display_text
             new_text_elem.set('aria-label', display_text)
-            logger.info(f"{placeholder_name}: preserved position with dominant-baseline=hanging, text: {display_text}")
 
         # Get index of old element
         old_index = list(parent).index(element)
