@@ -298,6 +298,7 @@ class TextFormatter:
             num_groups = len(groups)
 
             # Try to distribute groups evenly across lines
+            # ALWAYS use even distribution for ingredients - font size will be adjusted later
             if num_groups > 0 and num_groups >= num_lines:
                 # Calculate how many groups per line for even distribution
                 base_groups_per_line = num_groups // num_lines
@@ -319,18 +320,13 @@ class TextFormatter:
                     if line_groups:
                         # Build line text
                         line_text = ' / '.join([' '.join(g) for g in line_groups])
+                        lines.append(line_text)
+                        # DON'T check width here - let _find_optimal_font_size handle it
+                        # This ensures even distribution (2:2) over width-based (1:3)
 
-                        # Check if line fits in width
-                        line_width = self.measure_text_width(line_text, font_family, font_size)
-
-                        if line_width <= max_width:
-                            lines.append(line_text)
-                        else:
-                            # Line too wide, fall back to default algorithm
-                            break
-
-                # Check if we successfully distributed all groups
+                # Return balanced lines - font size adjustment happens in caller
                 if len(lines) == num_lines and group_idx == num_groups:
+                    logger.info(f"Balanced wrap: {num_groups} groups into {num_lines} lines = {[len(l.split(' / ')) for l in lines]} distribution")
                     return lines
 
         # Fallback to original algorithm for non-ingredients or if above didn't work
@@ -536,7 +532,13 @@ class TextFormatter:
 
             # Verify fit
             if not self._layout_fits(lines, max_width, max_height, font_family, font_size):
-                # Try greedy wrap as fallback
+                # For ingredients (has /), keep balanced distribution, try more lines
+                # DON'T fall back to greedy wrap which creates uneven 1:3 distribution
+                has_separators = '/' in tokens
+                if has_separators:
+                    # Continue to next iteration (more lines, smaller font, but balanced)
+                    continue
+                # For non-ingredients, try greedy wrap as fallback
                 lines = self._greedy_wrap(tokens, max_width, font_family, font_size)
                 if not lines or not self._layout_fits(lines, max_width, max_height, font_family, font_size):
                     continue
