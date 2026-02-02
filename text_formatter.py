@@ -378,7 +378,8 @@ class TextFormatter:
             if line_tokens:
                 # Clean up separators at line boundaries
                 line_text = ' '.join(t for t in line_tokens if t)
-                line_text = line_text.replace(' / ', '/ ').replace('/ /', '/')
+                # Fix spacing around "/" - ensure " / " format
+                line_text = re.sub(r'\s*/\s*', ' / ', line_text)  # Normalize to " / "
                 line_text = line_text.strip(' /')
                 if line_text:
                     lines.append(line_text)
@@ -489,16 +490,31 @@ class TextFormatter:
             }
 
         # Try wrapping at original font size
-        wrapped_lines = self._greedy_wrap(tokens, max_width, font_family, original_font_size)
-        if wrapped_lines and self._layout_fits(wrapped_lines, max_width, max_height, font_family, original_font_size):
-            # Original size fits with wrapping
-            logger.info(f"ORIGINAL SIZE FITS with wrap for '{text[:30]}...': {original_font_size:.1f}px, {len(wrapped_lines)} lines")
-            return {
-                'lines': wrapped_lines,
-                'font_size': original_font_size,
-                'line_height': original_font_size * self.LINE_HEIGHT_MULTIPLIER,
-                'num_lines': len(wrapped_lines)
-            }
+        # For ingredients (has "/"), use balanced wrap to get even distribution (2:2 not 1:3)
+        has_separators = '/' in text
+        if has_separators:
+            # Try balanced wrap with different line counts to find one that fits
+            for try_lines in range(2, self.MAX_LINES + 1):
+                wrapped_lines = self._balanced_wrap(tokens, try_lines, max_width, font_family, original_font_size)
+                if wrapped_lines and self._layout_fits(wrapped_lines, max_width, max_height, font_family, original_font_size):
+                    logger.info(f"ORIGINAL SIZE FITS with balanced wrap for '{text[:30]}...': {original_font_size:.1f}px, {len(wrapped_lines)} lines")
+                    return {
+                        'lines': wrapped_lines,
+                        'font_size': original_font_size,
+                        'line_height': original_font_size * self.LINE_HEIGHT_MULTIPLIER,
+                        'num_lines': len(wrapped_lines)
+                    }
+        else:
+            # For non-ingredients, use greedy wrap
+            wrapped_lines = self._greedy_wrap(tokens, max_width, font_family, original_font_size)
+            if wrapped_lines and self._layout_fits(wrapped_lines, max_width, max_height, font_family, original_font_size):
+                logger.info(f"ORIGINAL SIZE FITS with wrap for '{text[:30]}...': {original_font_size:.1f}px, {len(wrapped_lines)} lines")
+                return {
+                    'lines': wrapped_lines,
+                    'font_size': original_font_size,
+                    'line_height': original_font_size * self.LINE_HEIGHT_MULTIPLIER,
+                    'num_lines': len(wrapped_lines)
+                }
 
         # ========== STEP 2: ORIGINAL DOESN'T FIT - FIND OPTIMAL ==========
         logger.info(f"Original size {original_font_size:.1f}px doesn't fit for '{text[:30]}...', searching for optimal")
