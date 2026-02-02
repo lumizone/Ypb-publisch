@@ -571,19 +571,30 @@ class TextReplacer:
             new_text_elem.set('aria-label', new_text)
             logger.info(f"{placeholder_name}: created text in user area at ({center_x:.1f}, {area_y:.1f}), font={optimal_font_size:.1f}px, lines={len(lines)}")
         else:
-            # No user area (e.g. SKU) – use original position; surgical SKU replace
+            # No user area (e.g. SKU) – PRESERVE original transform and position exactly
             orig = placeholder_info.get('original_full_text', '') or aria_label
             if placeholder_name == 'sku':
                 display_text = self._surgical_sku_display_text(orig, new_text)
             else:
                 display_text = new_text
 
-            new_text_elem.set('x', str(x_pos))
-            new_text_elem.set('y', str(y_pos))
+            # IMPORTANT: Preserve the ENTIRE original transform, not just x/y
+            # The transform includes scale, rotation, and translation - all needed for correct position
+            if transform:
+                new_text_elem.set('transform', transform)
+                # With transform applied, use x=0, y=0 (transform handles positioning)
+                new_text_elem.set('x', '0')
+                new_text_elem.set('y', '0')
+                logger.info(f"{placeholder_name}: preserved original transform: {transform[:50]}...")
+            else:
+                # No transform - use extracted x,y position
+                new_text_elem.set('x', str(x_pos))
+                new_text_elem.set('y', str(y_pos))
+                logger.info(f"{placeholder_name}: no transform, using position ({x_pos}, {y_pos})")
+
             new_text_elem.set('style', f'font-family:{font_family};font-size:{font_size};fill:{fill};font-weight:{font_weight}')
             new_text_elem.text = display_text
             new_text_elem.set('aria-label', display_text)
-            logger.info(f"{placeholder_name}: created text at original position ({x_pos}, {y_pos})")
 
         # Get index of old element
         old_index = list(parent).index(element)
