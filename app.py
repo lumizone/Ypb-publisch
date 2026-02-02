@@ -60,12 +60,17 @@ app.config['UPLOAD_FOLDER'] = config.UPLOAD_DIR
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# #region agent log
+# #region agent log (disabled in production)
 def _dbg(location, msg, data=None, hid="H1"):
+    """Debug logging - DISABLED in production for security and performance."""
+    # Only enable debug logging if explicitly requested via environment variable
+    if not os.environ.get('ENABLE_DEBUG_LOG', '').lower() == 'true':
+        return  # No-op in production
     try:
         import json as _j
         from time import time as _t
         p = Path(__file__).parent / ".cursor" / "debug.log"
+        p.parent.mkdir(exist_ok=True)
         with open(p, "a") as f:
             f.write(_j.dumps({"location": location, "message": msg, "data": data or {}, "hypothesisId": hid, "timestamp": int(_t() * 1000), "sessionId": "debug-session"}) + "\n")
     except Exception:
@@ -5162,8 +5167,9 @@ def convert_ai_to_svg():
 
 
 @app.route('/api/restart', methods=['POST'])
+@requires_auth
 def restart_application():
-    """Restart the Flask application."""
+    """Restart the Flask application (requires authentication)."""
     try:
         import subprocess
         import threading

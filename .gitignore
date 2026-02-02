@@ -44,8 +44,15 @@ uploads/
 *.log
 *.pid
 
-# Environment files
+# Environment files (NEVER commit these!)
 .env
+.env.local
+.env.production
+.env.*.local
+
+# Debug files
+.cursor/
+debug.log
 
 # Large files
 *.zip

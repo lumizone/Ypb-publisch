@@ -60,3 +60,7 @@ backup_settings/
 # Test files
 test_*.py
 *_test.py
+
+# Debug files
+.cursor/
+debug.log
