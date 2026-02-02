@@ -107,6 +107,19 @@ class TTLDict:
             self._cleanup()
             return self._data.get(key, default)
 
+    def __contains__(self, key):
+        """Support 'in' operator: if key in dict"""
+        with self._lock:
+            self._cleanup()
+            return key in self._data
+
+    def pop(self, key, default=None):
+        """Remove and return value for key."""
+        with self._lock:
+            self._cleanup()
+            self._timestamps.pop(key, None)
+            return self._data.pop(key, default)
+
     def _cleanup(self):
         """Remove expired entries and enforce max_entries limit."""
         now = datetime.now()
