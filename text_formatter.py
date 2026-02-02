@@ -563,24 +563,37 @@ class TextFormatter:
                 }
 
         # Fallback: force fit with more lines and smaller font
+        # CRITICAL: Text MUST fit within the area - this is a HARD limit
         if best_layout is None:
             logger.warning(f"Could not find optimal layout for '{text[:30]}...', using aggressive fallback")
 
-            # Use greedy wrap with small font
+            # Start with minimum font and keep reducing until it fits
             test_font = min_font_size
             lines = self._greedy_wrap(tokens, max_width, font_family, test_font)
 
             if not lines:
                 lines = [text]
 
-            # Reduce font until it fits
-            for _ in range(50):
+            # Reduce font until it ACTUALLY fits - no minimum limit here!
+            # The text area constraint is more important than minimum font size
+            for _ in range(100):  # More iterations to ensure fit
                 if self._layout_fits(lines, max_width, max_height, font_family, test_font):
                     break
-                test_font *= 0.9
+                test_font *= 0.85  # Reduce more aggressively
                 lines = self._greedy_wrap(tokens, max_width, font_family, test_font)
-                if test_font < self.ABSOLUTE_MIN_FONT_SIZE:
-                    test_font = self.ABSOLUTE_MIN_FONT_SIZE
+                # NO minimum check - we MUST fit within the area
+                if test_font < 1.0:  # Absolute floor to prevent infinite loop
+                    test_font = 1.0
+                    # If still doesn't fit, truncate text
+                    if not self._layout_fits(lines, max_width, max_height, font_family, test_font):
+                        logger.error(f"Text cannot fit even at 1px, truncating: '{text[:30]}...'")
+                        # Truncate each line to fit
+                        truncated_lines = []
+                        for line in lines:
+                            while self.measure_text_width(line, font_family, test_font) > max_width and len(line) > 3:
+                                line = line[:-4] + "..."
+                            truncated_lines.append(line)
+                        lines = truncated_lines
                     break
 
             best_layout = {

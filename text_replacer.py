@@ -227,8 +227,17 @@ class TextReplacer:
 
         needs_wrap = len(lines) > 1
 
+        # VALIDATE: Final check that text fits within the area
+        total_text_height = line_height * len(lines)
+        max_line_width = max(self.formatter.measure_text_width(line, font_family, optimal_font_size) for line in lines) if lines else 0
+
+        if max_line_width > area_width:
+            logger.error(f"WARNING: {placeholder_name} text width ({max_line_width:.1f}px) exceeds area width ({area_width:.1f}px)!")
+        if total_text_height > area_height:
+            logger.error(f"WARNING: {placeholder_name} text height ({total_text_height:.1f}px) exceeds area height ({area_height:.1f}px)!")
+
         logger.info(f"Formatted '{placeholder_name}': {len(lines)} lines, font={optimal_font_size:.1f}px, "
-                    f"area={area_width:.0f}x{area_height:.0f}")
+                    f"text_size={max_line_width:.0f}x{total_text_height:.0f}, area={area_width:.0f}x{area_height:.0f}")
 
         # Clear existing text nodes
         for child in list(element):
@@ -571,30 +580,30 @@ class TextReplacer:
             new_text_elem.set('aria-label', new_text)
             logger.info(f"{placeholder_name}: created text in user area at ({center_x:.1f}, {area_y:.1f}), font={optimal_font_size:.1f}px, lines={len(lines)}")
         else:
-            # No user area (e.g. SKU) – PRESERVE original transform and position exactly
+            # No user area (e.g. SKU, RESEARCH USE ONLY) – PRESERVE EXACT POSITION
+            # Create text element at the EXACT same position as original paths
             orig = placeholder_info.get('original_full_text', '') or aria_label
             if placeholder_name == 'sku':
                 display_text = self._surgical_sku_display_text(orig, new_text)
             else:
                 display_text = new_text
 
-            # IMPORTANT: Preserve the ENTIRE original transform, not just x/y
-            # The transform includes scale, rotation, and translation - all needed for correct position
+            # Use dominant-baseline="hanging" so y coordinate aligns to TOP of text (like paths)
+            # This prevents the baseline shift that causes position changes
             if transform:
                 new_text_elem.set('transform', transform)
-                # With transform applied, use x=0, y=0 (transform handles positioning)
                 new_text_elem.set('x', '0')
                 new_text_elem.set('y', '0')
-                logger.info(f"{placeholder_name}: preserved original transform: {transform[:50]}...")
             else:
-                # No transform - use extracted x,y position
                 new_text_elem.set('x', str(x_pos))
                 new_text_elem.set('y', str(y_pos))
-                logger.info(f"{placeholder_name}: no transform, using position ({x_pos}, {y_pos})")
 
+            # CRITICAL: Use dominant-baseline="hanging" to match path positioning
+            new_text_elem.set('dominant-baseline', 'hanging')
             new_text_elem.set('style', f'font-family:{font_family};font-size:{font_size};fill:{fill};font-weight:{font_weight}')
             new_text_elem.text = display_text
             new_text_elem.set('aria-label', display_text)
+            logger.info(f"{placeholder_name}: preserved position with dominant-baseline=hanging, text: {display_text}")
 
         # Get index of old element
         old_index = list(parent).index(element)
