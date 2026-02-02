@@ -44,6 +44,7 @@ except (ImportError, OSError) as e:
 # Lazy import for rembg (may fail on import)
 HAS_REMBG = False
 rembg_remove = None
+_rembg_lock = threading.Lock()  # Thread lock for rembg (model loading is not thread-safe)
 
 try:
     from rembg import remove as rembg_remove
@@ -80,8 +81,48 @@ def _dbg(location, msg, data=None, hid="H1"):
 # Progress tracking for batch operations (with automatic cleanup)
 progress_tracker = ProgressTracker(max_entries=100, expire_minutes=30)
 
-# Background task results storage
-background_results = {}
+# Background task results storage with TTL cleanup to prevent memory leaks
+class TTLDict:
+    """Dictionary with automatic expiration of old entries."""
+    def __init__(self, max_age_seconds=3600, max_entries=50):
+        self._data = {}
+        self._timestamps = {}
+        self._max_age = max_age_seconds
+        self._max_entries = max_entries
+        self._lock = threading.Lock()
+
+    def __setitem__(self, key, value):
+        with self._lock:
+            self._cleanup()
+            self._data[key] = value
+            self._timestamps[key] = datetime.now()
+
+    def __getitem__(self, key):
+        with self._lock:
+            self._cleanup()
+            return self._data.get(key)
+
+    def get(self, key, default=None):
+        with self._lock:
+            self._cleanup()
+            return self._data.get(key, default)
+
+    def _cleanup(self):
+        """Remove expired entries and enforce max_entries limit."""
+        now = datetime.now()
+        # Remove expired
+        expired = [k for k, ts in self._timestamps.items()
+                   if (now - ts).total_seconds() > self._max_age]
+        for k in expired:
+            self._data.pop(k, None)
+            self._timestamps.pop(k, None)
+        # Enforce max entries (remove oldest)
+        while len(self._data) > self._max_entries:
+            oldest_key = min(self._timestamps, key=self._timestamps.get)
+            self._data.pop(oldest_key, None)
+            self._timestamps.pop(oldest_key, None)
+
+background_results = TTLDict(max_age_seconds=3600, max_entries=50)  # 1 hour TTL, max 50 entries
 
 def run_in_background(func):
     """Decorator to run function in background thread"""
@@ -859,8 +900,9 @@ def remove_background_with_reference(result_image, vial_reference, label_referen
             img_bytes.seek(0)
             input_bytes = img_bytes.getvalue()
             
-            # Usuń tło używając rembg
-            output_bytes = rembg_remove(input_bytes)
+            # Usuń tło używając rembg (with thread lock to prevent concurrent model loading)
+            with _rembg_lock:
+                output_bytes = rembg_remove(input_bytes)
             
             # Konwertuj wynik z powrotem do PIL Image
             if output_bytes:
@@ -3815,17 +3857,23 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
         mockups = []
         errors = []
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        # Use 2 workers to reduce memory pressure on Railway (512MB-2GB RAM)
+        with ThreadPoolExecutor(max_workers=2) as executor:
             futures = {executor.submit(process_single_mockup, label, i): i for i, label in enumerate(labels)}
 
-            for future in as_completed(futures):
+            # Add timeout to prevent hanging forever
+            for future in as_completed(futures, timeout=300):  # 5 min total timeout
                 try:
-                    result = future.result()
+                    result = future.result(timeout=120)  # 2 min per mockup
                     if 'error' in result:
                         errors.append(result['error'])
                     else:
                         mockups.append(result)
+                except TimeoutError:
+                    logger.error(f"Mockup generation timeout for future {futures[future]}")
+                    errors.append(f"Timeout for label {futures[future]}")
                 except Exception as e:
+                    logger.error(f"Mockup generation error: {e}")
                     errors.append(str(e))
 
         # Create ZIP

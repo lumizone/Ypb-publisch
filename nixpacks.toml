@@ -3,4 +3,4 @@ nixPkgs = ["python311"]
 aptPkgs = ["libxml2", "libxslt1.1", "libcairo2", "libpango1.0-0", "libgdk-pixbuf-2.0-0", "librsvg2-2", "zlib1g"]
 
 [start]
-cmd = "gunicorn -w 4 -b 0.0.0.0:$PORT --timeout 120 --threads 2 app:app"
+cmd = "gunicorn -w 2 -b 0.0.0.0:$PORT --timeout 180 --threads 2 --graceful-timeout 30 app:app"
