@@ -9,6 +9,18 @@ RUN apt-get update && apt-get install -y \
     libcairo2-dev \
     libpango1.0-dev \
     libglib2.0-dev \
+    fontconfig \
+    fonts-liberation \
+    fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Microsoft Core Fonts (Arial, Times New Roman, etc.)
+# This ensures consistent font metrics between localhost and Railway
+RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    ttf-mscorefonts-installer \
+    && fc-cache -f -v \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
