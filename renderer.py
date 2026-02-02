@@ -53,22 +53,44 @@ class Renderer:
             logger.warning("Neither cairosvg nor Inkscape available - PNG rendering may fail")
     
     def render_png(self, svg_path: Path, output_path: Path, dpi: int = None) -> Path:
-        """Render SVG to PNG at specified DPI."""
+        """Render SVG to PNG at specified DPI with WHITE BACKGROUND."""
         if dpi is None:
             dpi = config.PNG_DPI
 
         # Try cairosvg first (best quality)
         if CAIROSVG_AVAILABLE:
             try:
+                # Render to temp file first (transparent background)
+                import tempfile
+                temp_png = output_path.with_suffix('.tmp.png')
+
                 cairosvg.svg2png(
                     url=str(svg_path),
-                    write_to=str(output_path),
+                    write_to=str(temp_png),
                     output_width=None,
                     output_height=None,
                     dpi=dpi
                 )
 
-                if output_path.exists():
+                if temp_png.exists():
+                    # Add WHITE background using PIL
+                    img = Image.open(temp_png)
+                    if img.mode in ('RGBA', 'LA'):
+                        # Create white background
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        # Paste image with alpha channel as mask
+                        background.paste(img, mask=img.split()[-1] if 'A' in img.mode else None)
+                        img = background
+                    elif img.mode != 'RGB':
+                        img = img.convert('RGB')
+
+                    # Save with white background
+                    img.save(output_path, 'PNG', dpi=(dpi, dpi))
+
+                    # Clean up temp file
+                    temp_png.unlink()
+
+                    logger.info(f"Rendered PNG with white background: {output_path}")
                     return output_path
             except Exception as e:
                 logger.warning(f"cairosvg failed: {e}, trying Inkscape")
