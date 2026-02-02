@@ -490,20 +490,29 @@ class TextFormatter:
             }
 
         # Try wrapping at original font size
-        # For ingredients (has "/"), use balanced wrap to get even distribution (2:2 not 1:3)
+        # For ingredients (has "/"), ONLY try optimal line count at original size
+        # If doesn't fit, fall through to STEP 2 which reduces font size
         has_separators = '/' in text
         if has_separators:
-            # Try balanced wrap with different line counts to find one that fits
-            for try_lines in range(2, self.MAX_LINES + 1):
-                wrapped_lines = self._balanced_wrap(tokens, try_lines, max_width, font_family, original_font_size)
-                if wrapped_lines and self._layout_fits(wrapped_lines, max_width, max_height, font_family, original_font_size):
-                    logger.info(f"ORIGINAL SIZE FITS with balanced wrap for '{text[:30]}...': {original_font_size:.1f}px, {len(wrapped_lines)} lines")
-                    return {
-                        'lines': wrapped_lines,
-                        'font_size': original_font_size,
-                        'line_height': original_font_size * self.LINE_HEIGHT_MULTIPLIER,
-                        'num_lines': len(wrapped_lines)
-                    }
+            # Count ingredient groups (separated by "/")
+            num_groups = text.count('/') + 1
+
+            # Calculate optimal number of lines for even distribution
+            # 4 ingredients → 2 lines (2:2), 6 ingredients → 2 lines (3:3), etc.
+            optimal_lines = min(num_groups // 2 + (1 if num_groups % 2 else 0), self.MAX_LINES)
+            optimal_lines = max(2, optimal_lines)  # Minimum 2 lines
+
+            # Try ONLY the optimal line count at original size
+            wrapped_lines = self._balanced_wrap(tokens, optimal_lines, max_width, font_family, original_font_size)
+            if wrapped_lines and self._layout_fits(wrapped_lines, max_width, max_height, font_family, original_font_size):
+                logger.info(f"ORIGINAL SIZE FITS with balanced {optimal_lines} lines for '{text[:30]}...': {original_font_size:.1f}px")
+                return {
+                    'lines': wrapped_lines,
+                    'font_size': original_font_size,
+                    'line_height': original_font_size * self.LINE_HEIGHT_MULTIPLIER,
+                    'num_lines': len(wrapped_lines)
+                }
+            # If doesn't fit at original size, fall through to STEP 2 to reduce font
         else:
             # For non-ingredients, use greedy wrap
             wrapped_lines = self._greedy_wrap(tokens, max_width, font_family, original_font_size)
@@ -565,8 +574,12 @@ class TextFormatter:
                 is_better = True
             elif font_size > best_font_size * 1.05:  # Significantly larger font
                 is_better = True
-            elif font_size >= best_font_size * 0.95 and len(lines) < best_layout['num_lines']:
-                # Similar font size but fewer lines
+            elif len(lines) < best_layout['num_lines'] and font_size >= best_font_size * 0.85:
+                # FEWER LINES is STRONGLY preferred (even with smaller font)
+                # For ingredients, 2 lines at 18px is better than 3 lines at 20px
+                is_better = True
+            elif font_size >= best_font_size * 0.95 and len(lines) <= best_layout['num_lines']:
+                # Similar font size, same or fewer lines
                 is_better = True
 
             if is_better:
