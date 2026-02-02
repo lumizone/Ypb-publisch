@@ -3935,14 +3935,20 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
         mockups = []
         errors = []
 
-        # Use 2 workers to reduce memory pressure on Railway (512MB-2GB RAM)
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        # Use 6 workers for Railway paid plan (8 CPU/8GB RAM)
+        # Leaves 2 cores for main process and background tasks
+        max_workers = int(os.getenv('MOCKUP_WORKERS', '6'))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(process_single_mockup, label, i): i for i, label in enumerate(labels)}
 
-            # Add timeout to prevent hanging forever
-            for future in as_completed(futures, timeout=300):  # 5 min total timeout
+            # Timeout: 30 min for large batches (92 mockups with retries + verification)
+            # For 92 mockups at ~20s each = ~30 min total
+            total_timeout = int(os.getenv('MOCKUP_TOTAL_TIMEOUT', '1800'))  # 30 minutes
+            per_mockup_timeout = int(os.getenv('MOCKUP_TIMEOUT', '180'))  # 3 min per mockup
+
+            for future in as_completed(futures, timeout=total_timeout):
                 try:
-                    result = future.result(timeout=120)  # 2 min per mockup
+                    result = future.result(timeout=per_mockup_timeout)
                     if 'error' in result:
                         errors.append(result['error'])
                     else:
