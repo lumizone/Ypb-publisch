@@ -1040,6 +1040,17 @@ def remove_background_with_reference(result_image, vial_reference, label_referen
         return result_image
 
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Railway monitoring (no auth required)."""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'rendering_available': HAS_RENDERING,
+        'rembg_available': HAS_REMBG
+    }), 200
+
+
 @app.route('/')
 @requires_auth
 def index():
