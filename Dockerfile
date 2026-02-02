@@ -20,6 +20,10 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-download rembg model (176MB) during build so it's cached in the image
+# This prevents downloading it every time the container starts
+RUN python3 -c "from rembg import remove, new_session; session = new_session('u2net'); print('✅ rembg model cached in Docker image')"
+
 # Copy application code
 COPY . .
 
