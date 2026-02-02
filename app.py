@@ -191,6 +191,65 @@ def set_current_database(db_path):
 with open(Path(__file__).parent / 'app_dashboard.html', 'r') as f:
     DASHBOARD_UI = f.read()
 
+# Auto-detect available fonts on startup (helps debug Railway font issues)
+def detect_available_fonts():
+    """Detect which fonts are available on the system."""
+    try:
+        from PIL import ImageFont
+        import subprocess
+
+        # Try fc-list command (fontconfig)
+        try:
+            result = subprocess.run(['fc-list', ':', 'family'],
+                                    capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                families = set()
+                for line in result.stdout.split('\n'):
+                    if line.strip():
+                        # Extract font family name
+                        family = line.split(',')[0].strip()
+                        families.add(family)
+
+                if families:
+                    logger.info(f"✓ Font detection: {len(families)} font families found")
+
+                    # Log important fonts for label generation
+                    important = ['Liberation Sans', 'Arial', 'DejaVu Sans', 'Helvetica']
+                    found_important = [f for f in important if f in families]
+                    if found_important:
+                        logger.info(f"  ✓ Key fonts available: {', '.join(found_important)}")
+                    else:
+                        logger.warning(f"  ⚠️  No standard fonts found! Available: {list(families)[:5]}")
+                    return
+        except Exception as e:
+            logger.debug(f"fc-list detection failed: {e}")
+
+        # Fallback: Try to load common fonts directly
+        test_fonts = [
+            'LiberationSans-Regular',
+            'Liberation Sans',
+            'Arial',
+            'DejaVuSans',
+            'Helvetica'
+        ]
+        found = []
+        for font_name in test_fonts:
+            try:
+                ImageFont.truetype(font_name, 12)
+                found.append(font_name)
+            except:
+                pass
+
+        if found:
+            logger.info(f"✓ Fonts available: {', '.join(found)}")
+        else:
+            logger.warning("⚠️  NO FONTS FOUND - text measurements may be inaccurate!")
+
+    except Exception as e:
+        logger.warning(f"Font detection failed: {e}")
+
+detect_available_fonts()
+
 # Run startup cleanup
 auto_cleanup_startup(config.TEMP_DIR, config.OUTPUT_DIR, config.UPLOAD_DIR, hours=config.AUTO_CLEANUP_HOURS)
 

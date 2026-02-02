@@ -10,16 +10,30 @@ RUN apt-get update && apt-get install -y \
     libpango1.0-dev \
     libglib2.0-dev \
     fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install COMPREHENSIVE font collection for maximum compatibility
+# This ensures designs from any source (AI, Figma, etc.) render correctly
+RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
-    fonts-dejavu-core \
     fonts-liberation2 \
+    fonts-dejavu \
+    fonts-dejavu-core \
+    fonts-dejavu-extra \
+    fonts-freefont-ttf \
+    fonts-noto-core \
+    fonts-noto-ui-core \
+    fonts-urw-base35 \
+    fonts-font-awesome \
     && fc-cache -f -v \
     && rm -rf /var/lib/apt/lists/*
 
-# Liberation fonts provide Arial-compatible metrics:
-# - Liberation Sans = Arial equivalent
-# - Liberation Serif = Times New Roman equivalent
-# - Liberation Mono = Courier New equivalent
+# Installed fonts provide equivalents for:
+# - Liberation: Arial, Times New Roman, Courier (metrically compatible!)
+# - DejaVu: Comprehensive weights (Regular, Bold, Italic, BoldItalic)
+# - Noto: Google's comprehensive Unicode font
+# - URW: PostScript base fonts
+# - FreeFonts: GNU free fonts
 
 # Set working directory
 WORKDIR /app
