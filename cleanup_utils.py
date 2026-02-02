@@ -162,6 +162,139 @@ def get_directory_size(directory: Path) -> tuple:
     return (file_count, total_size)
 
 
+def cleanup_by_size_limit(directory: Path, max_size_gb: float = 5.0, target_size_gb: float = 4.0) -> int:
+    """
+    Enforce size limit on a directory by deleting oldest files first (FIFO).
+
+    Args:
+        directory: Directory to enforce limit on
+        max_size_gb: Maximum allowed size in GB (triggers cleanup)
+        target_size_gb: Target size after cleanup in GB
+
+    Returns:
+        Number of files deleted
+    """
+    if not directory.exists():
+        return 0
+
+    max_size_bytes = max_size_gb * 1024 * 1024 * 1024
+    target_size_bytes = target_size_gb * 1024 * 1024 * 1024
+
+    # Get current size
+    file_count, current_size = get_directory_size(directory)
+
+    if current_size <= max_size_bytes:
+        logger.debug(f"Directory {directory} is within limit: {current_size / 1024 / 1024 / 1024:.2f} GB / {max_size_gb} GB")
+        return 0
+
+    logger.info(f"Directory {directory} exceeds limit: {current_size / 1024 / 1024 / 1024:.2f} GB > {max_size_gb} GB, cleaning up...")
+
+    # Get all files sorted by modification time (oldest first)
+    files_with_mtime = []
+    try:
+        for file_path in directory.rglob('*'):
+            if file_path.is_file():
+                try:
+                    stat = file_path.stat()
+                    files_with_mtime.append((file_path, stat.st_mtime, stat.st_size))
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.error(f"Error listing files in {directory}: {e}")
+        return 0
+
+    # Sort by mtime (oldest first)
+    files_with_mtime.sort(key=lambda x: x[1])
+
+    deleted_count = 0
+    deleted_size = 0
+
+    for file_path, mtime, size in files_with_mtime:
+        if current_size - deleted_size <= target_size_bytes:
+            break
+
+        try:
+            file_path.unlink()
+            deleted_count += 1
+            deleted_size += size
+            logger.debug(f"Deleted old file: {file_path} ({size / 1024 / 1024:.2f} MB)")
+        except Exception as e:
+            logger.warning(f"Failed to delete {file_path}: {e}")
+
+    # Clean up empty directories
+    cleanup_empty_dirs(directory)
+
+    logger.info(f"Size cleanup complete: deleted {deleted_count} files, freed {deleted_size / 1024 / 1024 / 1024:.2f} GB from {directory}")
+
+    return deleted_count
+
+
+def start_background_cleanup_scheduler(temp_dir: Path, output_dir: Path, archive_dir: Path = None):
+    """
+    Start background cleanup scheduler with different intervals for different directories.
+
+    Schedule:
+    - Temp files: TTL=1 hour, check every 10 minutes
+    - Output files: TTL=24 hours, check every 10 minutes
+    - Archive: 5GB limit (FIFO), check every 1 hour
+
+    Args:
+        temp_dir: Temp directory path
+        output_dir: Output directory path
+        archive_dir: Archive directory path (optional, uses output_dir if None)
+    """
+    import threading
+
+    if archive_dir is None:
+        archive_dir = output_dir
+
+    def cleanup_temp_and_output():
+        """Run every 10 minutes for temp and output."""
+        while True:
+            try:
+                time.sleep(600)  # 10 minutes
+
+                # Temp files: TTL = 1 hour
+                deleted_temp = cleanup_old_files(temp_dir, hours=1)
+                cleanup_empty_dirs(temp_dir)
+
+                # Output files: TTL = 24 hours
+                deleted_output = cleanup_old_files(output_dir, hours=24)
+                cleanup_empty_dirs(output_dir)
+
+                if deleted_temp > 0 or deleted_output > 0:
+                    logger.info(f"[Scheduled cleanup] Temp: {deleted_temp} files, Output: {deleted_output} files")
+
+            except Exception as e:
+                logger.error(f"Error in scheduled cleanup (temp/output): {e}")
+
+    def cleanup_archive_size():
+        """Run every 1 hour for archive size limit."""
+        while True:
+            try:
+                time.sleep(3600)  # 1 hour
+
+                # Archive: 5GB limit, target 4GB after cleanup
+                deleted = cleanup_by_size_limit(archive_dir, max_size_gb=5.0, target_size_gb=4.0)
+
+                if deleted > 0:
+                    logger.info(f"[Scheduled cleanup] Archive: {deleted} files deleted (size limit)")
+
+            except Exception as e:
+                logger.error(f"Error in scheduled cleanup (archive): {e}")
+
+    # Start background threads
+    temp_output_thread = threading.Thread(target=cleanup_temp_and_output, daemon=True, name="cleanup-temp-output")
+    archive_thread = threading.Thread(target=cleanup_archive_size, daemon=True, name="cleanup-archive")
+
+    temp_output_thread.start()
+    archive_thread.start()
+
+    logger.info("Background cleanup scheduler started:")
+    logger.info("  - Temp (TTL=1h) + Output (TTL=24h): every 10 minutes")
+    logger.info("  - Archive (max 5GB): every 1 hour")
+
+
 def auto_cleanup_startup(temp_dir: Path, output_dir: Path, uploads_dir: Path, hours: int = 24) -> None:
     """
     Run cleanup on application startup.

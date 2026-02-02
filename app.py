@@ -19,7 +19,7 @@ from data_mapper import DataMapper, DataMapperError
 from csv_manager import CSVManager, CSVManagerError
 from ai_converter import AIConverter, AIConverterError
 from progress_tracker import ProgressTracker
-from cleanup_utils import auto_cleanup_startup, cleanup_job_files
+from cleanup_utils import auto_cleanup_startup, cleanup_job_files, start_background_cleanup_scheduler
 from verification_side_by_side import verify_mockup_with_sidebyside, create_mockup_vs_label_comparison
 import config
 import io
@@ -193,6 +193,12 @@ with open(Path(__file__).parent / 'app_dashboard.html', 'r') as f:
 
 # Run startup cleanup
 auto_cleanup_startup(config.TEMP_DIR, config.OUTPUT_DIR, config.UPLOAD_DIR, hours=config.AUTO_CLEANUP_HOURS)
+
+# Start background cleanup scheduler
+# - Temp files: TTL=1 hour, cleanup every 10 minutes
+# - Output files: TTL=24 hours, cleanup every 10 minutes
+# - Archive (output): 5GB limit (FIFO), cleanup every 1 hour
+start_background_cleanup_scheduler(config.TEMP_DIR, config.OUTPUT_DIR, config.OUTPUT_DIR)
 
 # Basic Authentication
 AUTH_USER = os.getenv('AUTH_USER', 'admin')
