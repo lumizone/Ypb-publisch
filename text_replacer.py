@@ -227,17 +227,33 @@ class TextReplacer:
 
         needs_wrap = len(lines) > 1
 
-        # VALIDATE: Final check that text fits within the area
+        # VALIDATE: Final check that text fits within the area - ENFORCE HARD LIMIT
         total_text_height = line_height * len(lines)
         max_line_width = max(self.formatter.measure_text_width(line, font_family, optimal_font_size) for line in lines) if lines else 0
 
-        if max_line_width > area_width:
-            logger.error(f"WARNING: {placeholder_name} text width ({max_line_width:.1f}px) exceeds area width ({area_width:.1f}px)!")
-        if total_text_height > area_height:
-            logger.error(f"WARNING: {placeholder_name} text height ({total_text_height:.1f}px) exceeds area height ({area_height:.1f}px)!")
+        # If text exceeds area, REDUCE font size until it fits (Railway has different font metrics!)
+        safety_margin = 1.05  # 5% margin for font rendering differences
+        retry_count = 0
+        max_retries = 20
 
-        logger.info(f"Formatted '{placeholder_name}': {len(lines)} lines, font={optimal_font_size:.1f}px, "
-                    f"text_size={max_line_width:.0f}x{total_text_height:.0f}, area={area_width:.0f}x{area_height:.0f}")
+        while (max_line_width * safety_margin > area_width or total_text_height > area_height) and retry_count < max_retries:
+            retry_count += 1
+            # Reduce font size by 5%
+            optimal_font_size *= 0.95
+            line_height = optimal_font_size * 1.2
+
+            # Recalculate with smaller font
+            total_text_height = line_height * len(lines)
+            max_line_width = max(self.formatter.measure_text_width(line, font_family, optimal_font_size) for line in lines) if lines else 0
+
+            logger.info(f"{placeholder_name}: Reducing font to {optimal_font_size:.1f}px (retry {retry_count}) - width={max_line_width:.0f}, height={total_text_height:.0f}")
+
+        if max_line_width * safety_margin > area_width or total_text_height > area_height:
+            logger.error(f"CRITICAL: {placeholder_name} text STILL exceeds area after {max_retries} retries!")
+            logger.error(f"  Text size: {max_line_width:.0f}x{total_text_height:.0f}, Area: {area_width:.0f}x{area_height:.0f}")
+        else:
+            logger.info(f"Formatted '{placeholder_name}': {len(lines)} lines, font={optimal_font_size:.1f}px, "
+                        f"text_size={max_line_width:.0f}x{total_text_height:.0f}, area={area_width:.0f}x{area_height:.0f} ✓")
 
         # Clear existing text nodes
         for child in list(element):
