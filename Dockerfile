@@ -12,16 +12,14 @@ RUN apt-get update && apt-get install -y \
     fontconfig \
     fonts-liberation \
     fonts-dejavu-core \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Microsoft Core Fonts (Arial, Times New Roman, etc.)
-# This ensures consistent font metrics between localhost and Railway
-RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-    ttf-mscorefonts-installer \
+    fonts-liberation2 \
     && fc-cache -f -v \
     && rm -rf /var/lib/apt/lists/*
+
+# Liberation fonts provide Arial-compatible metrics:
+# - Liberation Sans = Arial equivalent
+# - Liberation Serif = Times New Roman equivalent
+# - Liberation Mono = Courier New equivalent
 
 # Set working directory
 WORKDIR /app

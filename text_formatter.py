@@ -61,11 +61,16 @@ class TextFormatter:
 
         font = None
 
-        # Try to load the specific font
+        # Try to load the specific font (macOS, Linux, Windows paths)
         font_paths = [
+            # macOS paths
             f"/System/Library/Fonts/Supplemental/{font_family}.ttf",
             f"/Library/Fonts/{font_family}.ttf",
             f"/System/Library/Fonts/{font_family}.ttf",
+            # Linux paths (Railway/Docker)
+            f"/usr/share/fonts/truetype/liberation/{font_family}.ttf",
+            f"/usr/share/fonts/truetype/dejavu/{font_family}.ttf",
+            f"/usr/share/fonts/truetype/liberation2/{font_family}.ttf",
             f"~/.fonts/{font_family}.ttf",
             # Windows paths
             f"C:/Windows/Fonts/{font_family}.ttf",
@@ -79,14 +84,26 @@ class TextFormatter:
                 # Font file not found or unreadable, try next
                 continue
 
-        # Fallback fonts
+        # Fallback fonts (Liberation Sans has Arial-compatible metrics!)
         if font is None:
-            fallback_fonts = ['Arial', 'Helvetica', 'HelveticaNeue', 'DejaVuSans', 'FreeSans']
+            fallback_fonts = [
+                'LiberationSans-Regular',  # Railway/Linux - Arial equivalent!
+                'Arial',
+                'Helvetica',
+                'HelveticaNeue',
+                'DejaVuSans',
+                'FreeSans'
+            ]
             for fallback_name in fallback_fonts:
                 for fallback_path in [
+                    # macOS paths
                     f"/System/Library/Fonts/Supplemental/{fallback_name}.ttf",
                     f"/Library/Fonts/{fallback_name}.ttf",
                     f"/System/Library/Fonts/{fallback_name}.ttf",
+                    # Linux paths (Railway/Docker)
+                    f"/usr/share/fonts/truetype/liberation/{fallback_name}.ttf",
+                    f"/usr/share/fonts/truetype/dejavu/{fallback_name}.ttf",
+                    f"/usr/share/fonts/truetype/liberation2/{fallback_name}.ttf",
                 ]:
                     try:
                         font = ImageFont.truetype(fallback_path, int(font_size))
