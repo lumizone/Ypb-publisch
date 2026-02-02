@@ -33,5 +33,6 @@ RUN mkdir -p temp output uploads databases
 # Expose port (Railway will override this)
 EXPOSE 8000
 
-# Run the application
-CMD ["python", "app.py"]
+# Run the application with Gunicorn (production server)
+# Uses $PORT from Railway environment variable
+CMD gunicorn -w 2 -b 0.0.0.0:$PORT --timeout 180 --threads 2 --graceful-timeout 30 app:app
