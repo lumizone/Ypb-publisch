@@ -53,60 +53,153 @@ class TextFormatter:
         self.font_cache = {}
         self._pil_font_cache = {}
 
+    def _map_font_name(self, font_family: str) -> List[str]:
+        """Map common font names to their actual filenames across different font packages.
+
+        Returns list of possible filenames to try (in priority order).
+        """
+        # Normalize input
+        font_lower = font_family.lower().strip()
+
+        # Font name mapping (common names → actual filenames)
+        # Priority: Microsoft Core Fonts > Liberation > DejaVu > Fallbacks
+        font_map = {
+            # ARIAL family (Microsoft Core Fonts - EXACT match!)
+            'arial': ['arial.ttf', 'Arial.ttf', 'LiberationSans-Regular.ttf', 'DejaVuSans.ttf'],
+            'arial bold': ['arialbd.ttf', 'Arial-Bold.ttf', 'LiberationSans-Bold.ttf', 'DejaVuSans-Bold.ttf'],
+            'arial italic': ['ariali.ttf', 'Arial-Italic.ttf', 'LiberationSans-Italic.ttf', 'DejaVuSans-Oblique.ttf'],
+            'arial bold italic': ['arialbi.ttf', 'Arial-BoldItalic.ttf', 'LiberationSans-BoldItalic.ttf', 'DejaVuSans-BoldOblique.ttf'],
+            'arial black': ['ariblk.ttf', 'Arial-Black.ttf', 'DejaVuSans-ExtraBold.ttf'],
+
+            # TIMES NEW ROMAN family
+            'times new roman': ['times.ttf', 'Times-Roman.ttf', 'LiberationSerif-Regular.ttf', 'DejaVuSerif.ttf'],
+            'times new roman bold': ['timesbd.ttf', 'Times-Bold.ttf', 'LiberationSerif-Bold.ttf', 'DejaVuSerif-Bold.ttf'],
+            'times new roman italic': ['timesi.ttf', 'Times-Italic.ttf', 'LiberationSerif-Italic.ttf', 'DejaVuSerif-Italic.ttf'],
+            'times new roman bold italic': ['timesbi.ttf', 'Times-BoldItalic.ttf', 'LiberationSerif-BoldItalic.ttf', 'DejaVuSerif-BoldItalic.ttf'],
+
+            # COURIER NEW family
+            'courier new': ['cour.ttf', 'Courier-New.ttf', 'LiberationMono-Regular.ttf', 'DejaVuSansMono.ttf'],
+            'courier new bold': ['courbd.ttf', 'Courier-Bold.ttf', 'LiberationMono-Bold.ttf', 'DejaVuSansMono-Bold.ttf'],
+            'courier new italic': ['couri.ttf', 'Courier-Italic.ttf', 'LiberationMono-Italic.ttf', 'DejaVuSansMono-Oblique.ttf'],
+            'courier new bold italic': ['courbi.ttf', 'Courier-BoldItalic.ttf', 'LiberationMono-BoldItalic.ttf', 'DejaVuSansMono-BoldOblique.ttf'],
+
+            # VERDANA family
+            'verdana': ['verdana.ttf', 'Verdana.ttf', 'DejaVuSans.ttf'],
+            'verdana bold': ['verdanab.ttf', 'Verdana-Bold.ttf', 'DejaVuSans-Bold.ttf'],
+            'verdana italic': ['verdanai.ttf', 'Verdana-Italic.ttf', 'DejaVuSans-Oblique.ttf'],
+            'verdana bold italic': ['verdanaz.ttf', 'Verdana-BoldItalic.ttf', 'DejaVuSans-BoldOblique.ttf'],
+
+            # GEORGIA family
+            'georgia': ['georgia.ttf', 'Georgia.ttf', 'DejaVuSerif.ttf'],
+            'georgia bold': ['georgiab.ttf', 'Georgia-Bold.ttf', 'DejaVuSerif-Bold.ttf'],
+            'georgia italic': ['georgiai.ttf', 'Georgia-Italic.ttf', 'DejaVuSerif-Italic.ttf'],
+            'georgia bold italic': ['georgiaz.ttf', 'Georgia-BoldItalic.ttf', 'DejaVuSerif-BoldItalic.ttf'],
+
+            # TREBUCHET MS family
+            'trebuchet ms': ['trebuc.ttf', 'Trebuchet-MS.ttf', 'DejaVuSans.ttf'],
+            'trebuchet ms bold': ['trebucbd.ttf', 'Trebuchet-MS-Bold.ttf', 'DejaVuSans-Bold.ttf'],
+            'trebuchet ms italic': ['trebucit.ttf', 'Trebuchet-MS-Italic.ttf', 'DejaVuSans-Oblique.ttf'],
+            'trebuchet ms bold italic': ['trebucbi.ttf', 'Trebuchet-MS-BoldItalic.ttf', 'DejaVuSans-BoldOblique.ttf'],
+
+            # HELVETICA family (macOS)
+            'helvetica': ['Helvetica.ttf', 'LiberationSans-Regular.ttf', 'DejaVuSans.ttf'],
+            'helvetica bold': ['Helvetica-Bold.ttf', 'LiberationSans-Bold.ttf', 'DejaVuSans-Bold.ttf'],
+            'helvetica oblique': ['Helvetica-Oblique.ttf', 'LiberationSans-Italic.ttf', 'DejaVuSans-Oblique.ttf'],
+
+            # CALIBRI family (Microsoft Office - not in Core Fonts, fallback to Liberation)
+            'calibri': ['calibri.ttf', 'Calibri.ttf', 'LiberationSans-Regular.ttf'],
+            'calibri bold': ['calibrib.ttf', 'Calibri-Bold.ttf', 'LiberationSans-Bold.ttf'],
+            'calibri italic': ['calibrii.ttf', 'Calibri-Italic.ttf', 'LiberationSans-Italic.ttf'],
+            'calibri bold italic': ['calibriz.ttf', 'Calibri-BoldItalic.ttf', 'LiberationSans-BoldItalic.ttf'],
+        }
+
+        # Try exact match first
+        if font_lower in font_map:
+            candidates = font_map[font_lower]
+        else:
+            # Fallback: try the original name + common extensions
+            base_name = font_family.replace(' ', '-')
+            candidates = [
+                f"{font_family}.ttf",
+                f"{base_name}.ttf",
+                f"{font_family.replace(' ', '')}.ttf",
+                # Generic fallback
+                'LiberationSans-Regular.ttf',
+                'DejaVuSans.ttf',
+                'FreeSans.ttf'
+            ]
+
+        return candidates
+
     def _get_pil_font(self, font_family: str, font_size: float) -> ImageFont.FreeTypeFont:
-        """Get PIL font object, with caching."""
+        """Get PIL font object, with caching and intelligent font name mapping."""
         font_key = (font_family, int(font_size))
         if font_key in self._pil_font_cache:
             return self._pil_font_cache[font_key]
 
         font = None
 
-        # Try to load the specific font (macOS, Linux, Windows paths)
-        font_paths = [
+        # Get list of possible font filenames (handles "Arial Bold" → "arialbd.ttf" mapping)
+        font_candidates = self._map_font_name(font_family)
+
+        # Font directories to search (priority order)
+        font_directories = [
+            # Microsoft Core Fonts (BEST - exact match!)
+            "/usr/share/fonts/truetype/msttcorefonts",
             # macOS paths
-            f"/System/Library/Fonts/Supplemental/{font_family}.ttf",
-            f"/Library/Fonts/{font_family}.ttf",
-            f"/System/Library/Fonts/{font_family}.ttf",
-            # Linux paths (Railway/Docker)
-            f"/usr/share/fonts/truetype/liberation/{font_family}.ttf",
-            f"/usr/share/fonts/truetype/dejavu/{font_family}.ttf",
-            f"/usr/share/fonts/truetype/liberation2/{font_family}.ttf",
-            f"~/.fonts/{font_family}.ttf",
+            "/System/Library/Fonts/Supplemental",
+            "/Library/Fonts",
+            "/System/Library/Fonts",
+            # Linux paths (Liberation, DejaVu, etc.)
+            "/usr/share/fonts/truetype/liberation",
+            "/usr/share/fonts/truetype/liberation2",
+            "/usr/share/fonts/truetype/dejavu",
+            "/usr/share/fonts/truetype/freefont",
+            "~/.fonts",
             # Windows paths
-            f"C:/Windows/Fonts/{font_family}.ttf",
+            "C:/Windows/Fonts",
         ]
 
-        for path in font_paths:
-            try:
-                font = ImageFont.truetype(path, int(font_size))
+        # Try all combinations: directory × font_candidate
+        for font_filename in font_candidates:
+            for directory in font_directories:
+                path = f"{directory}/{font_filename}"
+                try:
+                    font = ImageFont.truetype(path, int(font_size))
+                    logger.info(f"✓ Loaded font: {font_filename} from {directory}")
+                    break
+                except (OSError, IOError):
+                    # Font file not found or unreadable, try next
+                    continue
+            if font:
                 break
-            except (OSError, IOError):
-                # Font file not found or unreadable, try next
-                continue
 
-        # Fallback fonts (Liberation Sans has Arial-compatible metrics!)
+        # Fallback fonts (try common fonts if specific font not found)
         if font is None:
             fallback_fonts = [
-                'LiberationSans-Regular',  # Railway/Linux - Arial equivalent!
-                'Arial',
-                'Helvetica',
-                'HelveticaNeue',
-                'DejaVuSans',
-                'FreeSans'
+                # Microsoft Core Fonts (BEST!)
+                'arial.ttf',
+                'times.ttf',
+                'verdana.ttf',
+                # Liberation fonts (metrically compatible with MS fonts)
+                'LiberationSans-Regular.ttf',
+                'LiberationSerif-Regular.ttf',
+                # DejaVu fonts (comprehensive)
+                'DejaVuSans.ttf',
+                'DejaVuSerif.ttf',
+                # FreeFonts
+                'FreeSans.ttf',
+                'FreeSerif.ttf',
+                # macOS
+                'Arial.ttf',
+                'Helvetica.ttf',
             ]
             for fallback_name in fallback_fonts:
-                for fallback_path in [
-                    # macOS paths
-                    f"/System/Library/Fonts/Supplemental/{fallback_name}.ttf",
-                    f"/Library/Fonts/{fallback_name}.ttf",
-                    f"/System/Library/Fonts/{fallback_name}.ttf",
-                    # Linux paths (Railway/Docker)
-                    f"/usr/share/fonts/truetype/liberation/{fallback_name}.ttf",
-                    f"/usr/share/fonts/truetype/dejavu/{fallback_name}.ttf",
-                    f"/usr/share/fonts/truetype/liberation2/{fallback_name}.ttf",
-                ]:
+                for directory in font_directories:
+                    fallback_path = f"{directory}/{fallback_name}"
                     try:
                         font = ImageFont.truetype(fallback_path, int(font_size))
+                        logger.warning(f"⚠ Using fallback font: {fallback_name} (requested: {font_family})")
                         break
                     except (OSError, IOError):
                         # Fallback font not found, try next

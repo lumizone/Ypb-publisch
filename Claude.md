@@ -1,12 +1,191 @@
 # YPBv2 - Label & Mockup Generator
 
-**Status**: ✅ Production Ready (1 lutego 2026)
+**Status**: ✅ Production Ready (2 lutego 2026)
 **Lokalizacja**: `/Users/lukasz/YPBv2`
 **Port**: http://localhost:8000
+**Railway**: https://ypbv2.up.railway.app (8 CPU / 8GB RAM)
 
 ---
 
 ## 🎯 AKTUALNY STAN APLIKACJI
+
+### ✅ Railway Production Deployment (02.02.2026) 🚀
+
+**Cel**: Pełne wdrożenie produkcyjne na Railway z optymalizacją dla 8 CPU / 8GB RAM
+
+#### 1. **Balanced Text Wrapping - Ingredients 2:2**
+**Problem**: Algorytm zawijał tekst nierównomiernie (1:3 zamiast 2:2)
+- 4 składniki → Line 1: 1 składnik, Line 2: 3 składniki ❌
+
+**Rozwiązanie**:
+- STEP 1: Dla ingredients oblicz optimal line count (4 ingredients → 2 lines)
+- Priorytet: MNIEJ linii + większa czcionka
+- Silniejsza preferencja dla fewer lines (85% threshold zamiast 95%)
+
+**Rezultat**:
+- 4 składniki → 2:2 distribution ✅
+- 6 składników → 3:3 distribution ✅
+
+**Pliki**: `text_formatter.py` (linie 492-524, 571-582)
+
+---
+
+#### 2. **Area Enforcement - Hard Limit**
+**Problem**: Text areas były tylko logowane, nie wymuszane!
+- Tekst mógł przekraczać obszary (szczególnie na Railway z różnymi fontami)
+
+**Rozwiązanie**:
+- Retry loop: zmniejsza font o 5% aż się zmieści (max 20 prób)
+- Safety margin 5% dla różnic w renderingu fontów
+- CRITICAL error jeśli nadal nie pasuje
+
+**Rezultat**: Text ZAWSZE mieści się w areas ✅
+
+**Pliki**: `text_replacer.py` (linie 230-256)
+
+---
+
+#### 3. **PNG White Background**
+**Problem**: PNG renderowane z przezroczystym tłem (cairosvg default)
+
+**Rozwiązanie**:
+- Render do temp PNG (transparent)
+- PIL: Stwórz białe tło RGB(255, 255, 255)
+- Paste PNG z alpha channel jako mask
+- Save final PNG z białym tłem
+
+**Rezultat**: PNG ma białe tło jak oryginał ✅
+
+**Pliki**: `renderer.py` (linie 55-98)
+
+---
+
+#### 4. **Railway Text Positioning Fix**
+**Problem**: SKU/RESEARCH USE ONLY przesuwane na Railway
+- `dominant-baseline="hanging"` NIE obsługiwane przez Railway rendering
+
+**Rozwiązanie**:
+- Parse `matrix(a,b,c,d,e,f)` transform → extract translateX, translateY
+- Calculate baseline offset: `y_final = translateY + (font_size * 0.85)`
+- Use absolute x,y coordinates (no special attributes)
+
+**Rezultat**: Uniwersalne pozycjonowanie (localhost + Railway) ✅
+
+**Pliki**: `text_replacer.py` (linie 607-635)
+
+---
+
+#### 5. **Comprehensive Font Package**
+**Problem**: Railway Docker bez czcionek → fallback fonts → złe metryki
+
+**Rozwiązanie - zainstalowano 10 pakietów fontów**:
+```dockerfile
+fonts-liberation         # Arial equivalent (metrically compatible!)
+fonts-liberation2        # Bold, Italic variants
+fonts-dejavu             # Full weights
+fonts-dejavu-extra       # Extended glyphs
+fonts-freefont-ttf       # GNU fonts
+fonts-noto-core          # Google Unicode
+fonts-noto-ui-core       # UI fonts
+fonts-urw-base35         # PostScript fonts
+fonts-font-awesome       # Icons
+```
+
+**Auto-detection przy starcie**:
+- Uses `fc-list` to enumerate fonts
+- Logs key fonts (Liberation Sans, DejaVu, etc.)
+- Helps debug font issues
+
+**Rezultat**:
+- Liberation Sans = Arial metrics ✅
+- Consistent rendering localhost = Railway ✅
+- 247+ font families available ✅
+
+**Pliki**: `Dockerfile` (linie 4-28), `app.py` (linie 194-241), `text_formatter.py` (linie 65-109)
+
+---
+
+#### 6. **Background Cleanup Scheduler - TTL + Size Limit**
+**Problem**: Pliki tymczasowe zapełniają dysk
+
+**Rozwiązanie - automatyczne czyszczenie**:
+```
+Schedule:
+- Temp files:   TTL=1h,    cleanup co 10 minut
+- Output files: TTL=24h,   cleanup co 10 minut
+- Archive:      max 5GB,   cleanup co 1 godzinę (FIFO - oldest first)
+```
+
+**Funkcje**:
+- `cleanup_by_size_limit()` - FIFO deletion when exceeding 5GB
+- `start_background_cleanup_scheduler()` - daemon threads
+- Nie blokuje aplikacji
+
+**Rezultat**: Automatyczne zarządzanie pamięcią ✅
+
+**Pliki**: `cleanup_utils.py` (linie 165-264), `app.py` (linie 197-201)
+
+---
+
+#### 7. **Mockup Generation Optimization**
+**Problem**: Timeout dla 92 mockups (tylko 2 workers, 5 min timeout)
+
+**Rozwiązanie dla Railway paid plan (8 CPU / 8GB RAM)**:
+```python
+Workers: 2 → 6  (3x szybciej!)
+Total timeout: 300s (5 min) → 1800s (30 min)
+Per mockup: 120s (2 min) → 180s (3 min)
+
+Konfigurowalne env vars:
+- MOCKUP_WORKERS=6
+- MOCKUP_TOTAL_TIMEOUT=1800
+- MOCKUP_TIMEOUT=180
+```
+
+**Performance**:
+- Przed: 92 mockups / 2 workers = 46 batches × 20s = ~15 min → TIMEOUT ❌
+- Po: 92 mockups / 6 workers = 16 batches × 20s = ~5-10 min ✅
+
+**Rezultat**: 3x szybciej + no timeout ✅
+
+**Pliki**: `app.py` (linie 3938-3951)
+
+---
+
+#### 8. **Gunicorn Timeout Increase**
+**Problem**: 180s timeout za krótki dla 92 labels
+
+**Rozwiązanie**:
+```
+Timeout: 180s → 600s (10 minut)
+Graceful timeout: 30s → 60s
+```
+
+**Rezultat**: Large batch generation nie timeout ✅
+
+**Pliki**: `Procfile`, `Dockerfile` (CMD)
+
+---
+
+### 📊 Podsumowanie Railway Deployment
+
+| Feature | Przed | Po | Status |
+|---------|-------|-------|--------|
+| **Text wrapping** | 1:3 nierównomiernie | 2:2 równomiernie | ✅ |
+| **Area enforcement** | Log only | Hard limit (retry) | ✅ |
+| **PNG background** | Transparent | White | ✅ |
+| **Railway positioning** | Przesunięte | Absolute coords | ✅ |
+| **Fonts** | Brak | 247+ families | ✅ |
+| **Cleanup** | Manual | Auto (TTL + 5GB) | ✅ |
+| **Mockup workers** | 2 | 6 | ✅ |
+| **Mockup timeout** | 5 min | 30 min | ✅ |
+| **Gunicorn timeout** | 3 min | 10 min | ✅ |
+
+**Total commits dzisiaj**: 11
+**Total plików zmienionych**: 8
+**Railway deployment**: ✅ Production ready
+
+---
 
 ### ✅ Zaimplementowano Text Alignment (01.02.2026)
 

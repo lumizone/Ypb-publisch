@@ -25,11 +25,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-ui-core \
     fonts-urw-base35 \
     fonts-font-awesome \
-    && fc-cache -f -v \
+    wget \
+    cabextract \
     && rm -rf /var/lib/apt/lists/*
 
-# Installed fonts provide equivalents for:
-# - Liberation: Arial, Times New Roman, Courier (metrically compatible!)
+# Install Microsoft Core Fonts (Arial, Times New Roman, Courier, etc.)
+# These are the ACTUAL fonts used in Adobe Illustrator and Microsoft Office
+RUN mkdir -p /tmp/msfonts && cd /tmp/msfonts \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/andale32.exe \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arial32.exe \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arialb32.exe \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/comic32.exe \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/courie32.exe \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/georgi32.exe \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/impact32.exe \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/times32.exe \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/trebuc32.exe \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/verdan32.exe \
+    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/webdin32.exe \
+    && for exe in *.exe; do cabextract -q $exe; done \
+    && mkdir -p /usr/share/fonts/truetype/msttcorefonts \
+    && cp *.ttf /usr/share/fonts/truetype/msttcorefonts/ \
+    && fc-cache -f -v \
+    && cd / && rm -rf /tmp/msfonts
+
+# Installed fonts:
+# - Microsoft Core: Arial, Arial Bold, Arial Italic, Arial Bold Italic
+#                   Times New Roman (all weights), Courier New (all weights)
+#                   Verdana, Georgia, Trebuchet, Comic Sans, Impact, Webdings
+# - Liberation: Metric-compatible fallbacks
 # - DejaVu: Comprehensive weights (Regular, Bold, Italic, BoldItalic)
 # - Noto: Google's comprehensive Unicode font
 # - URW: PostScript base fonts
