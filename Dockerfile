@@ -100,4 +100,5 @@ EXPOSE 8000
 
 # Run the application with Gunicorn (production server)
 # Uses $PORT from Railway environment variable
-CMD gunicorn -w 2 -b 0.0.0.0:$PORT --timeout 600 --threads 2 --graceful-timeout 60 app:app
+# 4 workers x 4 threads = 16 concurrent requests for 8 CPU plan
+CMD gunicorn -w 4 -b 0.0.0.0:$PORT --timeout 900 --threads 4 --graceful-timeout 120 app:app
