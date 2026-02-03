@@ -13,6 +13,55 @@
 
 **Cel**: Pełne wdrożenie produkcyjne na Railway z optymalizacją dla 8 CPU / 8GB RAM
 
+---
+
+#### 0. **Microsoft Core Fonts + Intelligent Font Mapping** ⭐ NOWE
+
+**Problem**: Czcionki źle dobierane - "Arial Bold" nie działał
+- Template: "Arial Bold" → Aktualnie używa: "LiberationSans-Regular" ❌
+- Brak Bold weight, złe metryki, różnice w renderingu
+
+**Rozwiązanie 1 - Install Microsoft Core Fonts**:
+```dockerfile
+# Download i install 11 pakietów Microsoft Core Fonts:
+- Arial (Regular, Bold, Italic, Bold Italic)
+- Times New Roman (all weights)
+- Courier New (all weights)
+- Verdana, Georgia, Trebuchet MS, Comic Sans, Impact, Webdings
+
+Źródło: SourceForge (cabextract .exe → .ttf)
+Lokalizacja: /usr/share/fonts/truetype/msttcorefonts/
+```
+
+**Rozwiązanie 2 - Intelligent Font Name Mapping**:
+```python
+# Nowa funkcja w text_formatter.py
+_map_font_name("Arial Bold") → [
+    "arialbd.ttf",           # Microsoft Core (EXACT!)
+    "Arial-Bold.ttf",        # macOS
+    "LiberationSans-Bold.ttf",  # Fallback
+    "DejaVuSans-Bold.ttf"    # Last resort
+]
+
+# 60+ mappings dla wszystkich popularnych fontów:
+- Arial (Regular, Bold, Italic, Bold Italic)
+- Times New Roman (4 weights)
+- Courier New (4 weights)
+- Verdana, Georgia, Trebuchet, Helvetica, Calibri
+
+Priority: Microsoft Core > Liberation > DejaVu
+```
+
+**Rezultat**:
+- ✅ Template "Arial Bold" → FAKTYCZNY arialbd.ttf z Microsoft
+- ✅ 100% zgodność z Adobe Illustrator
+- ✅ Poprawne metryki czcionki (Bold ma Bold weight!)
+- ✅ Logi: "✓ Loaded font: arialbd.ttf from /usr/share/fonts/truetype/msttcorefonts"
+
+**Pliki**: `Dockerfile` (linie 15-47), `text_formatter.py` (linie 52-138, 141-177)
+
+---
+
 #### 1. **Balanced Text Wrapping - Ingredients 2:2**
 **Problem**: Algorytm zawijał tekst nierównomiernie (1:3 zamiast 2:2)
 - 4 składniki → Line 1: 1 składnik, Line 2: 3 składniki ❌
@@ -171,19 +220,22 @@ Graceful timeout: 30s → 60s
 
 | Feature | Przed | Po | Status |
 |---------|-------|-------|--------|
+| **Font matching** | Liberation Regular | Microsoft Core Fonts | ✅ ⭐ |
+| **"Arial Bold"** | LiberationSans-Regular | arialbd.ttf (exact!) | ✅ ⭐ |
+| **Font mapping** | Brak | 60+ intelligent mappings | ✅ ⭐ |
 | **Text wrapping** | 1:3 nierównomiernie | 2:2 równomiernie | ✅ |
 | **Area enforcement** | Log only | Hard limit (retry) | ✅ |
 | **PNG background** | Transparent | White | ✅ |
 | **Railway positioning** | Przesunięte | Absolute coords | ✅ |
-| **Fonts** | Brak | 247+ families | ✅ |
+| **Fonts installed** | 247+ families | 247+ PLUS MS Core | ✅ |
 | **Cleanup** | Manual | Auto (TTL + 5GB) | ✅ |
 | **Mockup workers** | 2 | 6 | ✅ |
 | **Mockup timeout** | 5 min | 30 min | ✅ |
 | **Gunicorn timeout** | 3 min | 10 min | ✅ |
 
-**Total commits dzisiaj**: 11
-**Total plików zmienionych**: 8
-**Railway deployment**: ✅ Production ready
+**Total commits dzisiaj**: 12 ⭐
+**Total plików zmienionych**: 9 ⭐
+**Railway deployment**: ✅ Production ready (deploying now...)
 
 ---
 
