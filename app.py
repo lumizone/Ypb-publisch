@@ -3058,9 +3058,107 @@ def get_mockup_result(filename):
         return jsonify({'error': str(e)}), 500
 
 
-def _generate_mockup_for_product_with_retry(vial_image, label_image, product_name, sku, dosage, retry_hint=None):
+def _validate_vial_consistency(original_vial: 'PIL.Image.Image', generated_mockup: 'PIL.Image.Image', tolerance: float = 0.15) -> dict:
+    """
+    Validate that the generated mockup preserves the original vial's size and shape.
+
+    Compares:
+    1. Overall image dimensions ratio
+    2. Vial bounding box (if detectable)
+    3. Aspect ratio preservation
+
+    Args:
+        original_vial: Original vial image (PIL Image)
+        generated_mockup: Generated mockup image (PIL Image)
+        tolerance: Allowed difference ratio (0.15 = 15%)
+
+    Returns:
+        dict with:
+        - is_valid: bool
+        - size_diff_percent: float
+        - issues: List[str]
+        - details: dict with measurements
+    """
+    import numpy as np
+
+    issues = []
+    details = {}
+
+    try:
+        # Get dimensions
+        orig_w, orig_h = original_vial.size
+        mock_w, mock_h = generated_mockup.size
+
+        details['original_size'] = (orig_w, orig_h)
+        details['mockup_size'] = (mock_w, mock_h)
+
+        # Check aspect ratio
+        orig_aspect = orig_w / orig_h
+        mock_aspect = mock_w / mock_h
+        aspect_diff = abs(orig_aspect - mock_aspect) / orig_aspect
+        details['aspect_ratio_diff'] = aspect_diff
+
+        if aspect_diff > tolerance:
+            issues.append(f"Aspect ratio changed: {orig_aspect:.2f} → {mock_aspect:.2f} ({aspect_diff*100:.1f}% diff)")
+
+        # Check overall size ratio
+        orig_area = orig_w * orig_h
+        mock_area = mock_w * mock_h
+        area_diff = abs(orig_area - mock_area) / orig_area
+        details['area_diff'] = area_diff
+
+        if area_diff > tolerance * 2:  # More tolerance for area
+            issues.append(f"Image area changed significantly: {area_diff*100:.1f}% diff")
+
+        # Try to detect vial contour and compare (more advanced check)
+        try:
+            # Convert to grayscale numpy arrays
+            orig_gray = np.array(original_vial.convert('L'))
+            mock_gray = np.array(generated_mockup.convert('L'))
+
+            # Simple edge detection - count non-background pixels
+            orig_threshold = np.mean(orig_gray)
+            mock_threshold = np.mean(mock_gray)
+
+            orig_content = np.sum(orig_gray < orig_threshold * 0.9)
+            mock_content = np.sum(mock_gray < mock_threshold * 0.9)
+
+            if orig_content > 0:
+                content_diff = abs(orig_content - mock_content) / orig_content
+                details['content_area_diff'] = content_diff
+
+                if content_diff > tolerance:
+                    issues.append(f"Vial content area changed: {content_diff*100:.1f}% diff")
+        except Exception as e:
+            logger.debug(f"Could not perform advanced vial detection: {e}")
+
+        # Overall validation
+        is_valid = len(issues) == 0
+
+        # Calculate overall size difference percentage
+        size_diff_percent = max(aspect_diff, area_diff) * 100
+
+        return {
+            'is_valid': is_valid,
+            'size_diff_percent': size_diff_percent,
+            'issues': issues,
+            'details': details
+        }
+
+    except Exception as e:
+        logger.error(f"Error validating vial consistency: {e}")
+        return {
+            'is_valid': True,  # Don't block on validation errors
+            'size_diff_percent': 0,
+            'issues': [f"Validation error: {str(e)}"],
+            'details': {}
+        }
+
+
+def _generate_mockup_for_product_with_retry(vial_image, label_image, product_name, sku, dosage, retry_hint=None, original_vial_for_validation=None):
     """
     Generate a single mockup with optional retry hint for corrections.
+    Uses TRIPLE vial reference for size/shape consistency.
     Used in parallel processing with auto-retry on verification failure.
 
     Args:
@@ -3070,6 +3168,7 @@ def _generate_mockup_for_product_with_retry(vial_image, label_image, product_nam
         sku: SKU string
         dosage: Dosage string
         retry_hint: Optional hint about what went wrong in previous attempt
+        original_vial_for_validation: Original vial image for size validation (optional)
 
     Returns:
         PIL Image with transparent background
@@ -3079,6 +3178,10 @@ def _generate_mockup_for_product_with_retry(vial_image, label_image, product_nam
         from io import BytesIO
         from google import genai
         from google.genai import types
+
+        # Store original vial for validation if not provided
+        if original_vial_for_validation is None:
+            original_vial_for_validation = vial_image.copy()
 
         # Choose optimal background color (avoid colors in label/vial)
         optimal_bg_color = _choose_optimal_background_color(label_image, vial_image)
@@ -3090,85 +3193,106 @@ def _generate_mockup_for_product_with_retry(vial_image, label_image, product_nam
         retry_section = ""
         if retry_hint:
             retry_section = f"""
-⚠️ CORRECTION REQUIRED - PREVIOUS ATTEMPT FAILED:
+⚠️ CRITICAL CORRECTION REQUIRED - PREVIOUS ATTEMPT FAILED:
 {retry_hint}
 
-You MUST fix these issues in this attempt. Read the text from the label image VERY CAREFULLY and reproduce it EXACTLY.
+You MUST fix these issues NOW. The vial size and shape MUST match the reference images EXACTLY.
 """
 
-        prompt = f"""Apply this label design to the pharmaceutical vial. The label will wrap around the cylindrical vial surface.
+        # Enhanced prompt with VIAL SIZE PRESERVATION as top priority
+        prompt = f"""
+{'='*60}
+TASK: Apply label to pharmaceutical vial
+{'='*60}
 
 {retry_section}
-Expected content (reference only - READ FROM LABEL IMAGE, NOT THIS TEXT):
-- Product: {product_name}
-- Formula: {dosage if dosage else '(see label)'}
-- Code: {sku}
 
-CRITICAL INSTRUCTIONS:
+🚨 ABSOLUTE REQUIREMENT #1 - VIAL PRESERVATION (NON-NEGOTIABLE):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. TEXT PRESERVATION (HIGHEST PRIORITY):
-   ✓ Read ALL text from the label image character-by-character
-   ✓ Preserve EVERY letter, number, symbol, space exactly as shown
-   ✓ Keep punctuation: parentheses (), slashes /, hyphens -, periods .
-   ✓ Preserve number formats: "10mg" stays "10mg", "10 mg" stays "10 mg"
-   ✓ Maintain exact spelling: if label shows "GHRP-2 (5mg)" write "GHRP-2 (5mg)"
-   ✓ Do NOT add, remove, or change ANY characters
+I am providing the SAME VIAL IMAGE THREE TIMES as reference.
+You MUST use this EXACT vial - DO NOT regenerate or modify it!
 
-2. POSITIONING & CROPPING:
-   ✓ Label may wrap around vial - some text at edges may be partially visible or cut off
-   ✓ This is NORMAL and CORRECT for cylindrical vials
-   ✓ If edge text appears cut (like "RESEARCH USE ON..." → "RESEARCH USE"), keep it cut
-   ✓ If SKU is partial (like "YPB.1" when full is "YPB.111"), keep it partial
-   ✓ Match the reference label's cropping/wrapping behavior
+✗ DO NOT change the vial SIZE
+✗ DO NOT change the vial SHAPE
+✗ DO NOT change the vial PROPORTIONS
+✗ DO NOT change the vial POSITION
+✗ DO NOT change the vial LIGHTING
+✗ DO NOT change the vial ANGLE
 
-3. VISUAL ACCURACY (CRITICAL - PRESERVE ALL STYLING):
-   ✓ Copy exact colors: background color, text colors
-   ✓ Copy exact fonts: family (sans-serif/serif), size (proportions)
+The vial in your output MUST be PIXEL-PERFECT IDENTICAL to the input vial.
+ONLY the label text area should change - NOTHING ELSE!
 
-   ✓ FONT WEIGHT:
-     • If text is BOLD in reference → make it BOLD in mockup
-     • If text is REGULAR in reference → make it REGULAR in mockup
-     • Preserve the exact visual weight as shown in the reference label
+📏 VIAL DIMENSIONS TO PRESERVE:
+   Original vial size: {vial_image.size[0]}x{vial_image.size[1]} pixels
+   Output MUST be: {vial_image.size[0]}x{vial_image.size[1]} pixels (EXACT!)
 
-   ✓ Copy exact layout: alignment, line spacing, text positioning
-   ✓ Apply natural curvature to match vial's cylindrical surface
 
-EXAMPLES OF FONT WEIGHT PRESERVATION:
-   Reference shows "SKU: YPB.111" in BOLD → Mockup MUST show it in BOLD
-   Reference shows "10mg" in REGULAR → Mockup MUST show it in REGULAR
-   Reference shows "Selank" in BOLD → Mockup MUST show it in BOLD
+🏷️ REQUIREMENT #2 - LABEL TEXT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-4. TECHNICAL QUALITY:
-   ✓ Keep text SHARP and readable (not blurry)
-   ✓ Maintain high resolution
-   ✓ Natural lighting and shadows
-   ✓ Preserve vial shape and proportions
+Product: {product_name}
+SKU: {sku}
+Dosage: {dosage if dosage else '(see label image)'}
 
-REFERENCE SOURCE: The label image is your ONLY source. Ignore the expected content text above - READ from the image."""
+Read ALL text from the label image and apply it to the vial:
+✓ Preserve EXACT text (character-by-character)
+✓ Preserve fonts, colors, layout
+✓ Apply natural cylindrical curvature
+✓ Keep text SHARP and readable
 
-        logger.info(f"Generating mockup for {product_name} (SKU: {sku}) {'[RETRY]' if retry_hint else ''}")
+
+📋 SUMMARY - WHAT CHANGES vs WHAT STAYS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CHANGES (only these):
+  ✓ Text on the label area
+
+STAYS IDENTICAL (do not touch):
+  ✗ Vial size/dimensions
+  ✗ Vial shape/silhouette
+  ✗ Vial position in frame
+  ✗ Vial lighting/shadows
+  ✗ Background color
+  ✗ Overall image dimensions
+
+OUTPUT: Generate mockup with EXACT same vial, only label text changed.
+"""
+
+        logger.info(f"Generating mockup for {product_name} (SKU: {sku}) {'[RETRY]' if retry_hint else ''} [3x vial reference]")
 
         # Initialize Gemini client
         client = genai.Client(api_key=config.GEMINI_API_KEY)
 
-        # Prepare content with images
+        # Prepare content with images - SEND VIAL 3 TIMES for emphasis
         vial_w, vial_h = vial_image.size
         aspect = _aspect_ratio_for_gemini(vial_w, vial_h)
 
-        # Create generation config
+        # Create generation config - VERY LOW temperature for consistency
         generation_config = types.GenerateContentConfig(
-            temperature=0.05 if retry_hint else 0.1,
-            top_p=0.9,
-            top_k=5 if retry_hint else 10,
+            temperature=0.01 if retry_hint else 0.02,  # Ultra-low for consistent vial size
+            top_p=0.85,
+            top_k=3 if retry_hint else 5,
             response_modalities=["IMAGE"],
         )
 
-        # Generate content with images
+        # Generate content with images - SEND VIAL 3 TIMES for size/shape emphasis
+        # This tells Gemini: "This vial is CRITICAL - preserve it exactly!"
         response = client.models.generate_content(
             model=config.GEMINI_MOCKUP_MODEL,
             contents=[
                 prompt,
+                # VIAL #1 - Primary reference
+                "=== REFERENCE VIAL IMAGE #1 (SIZE REFERENCE) ===",
                 vial_image_with_green_bg,
+                # VIAL #2 - Shape reference
+                "=== REFERENCE VIAL IMAGE #2 (SHAPE REFERENCE) ===",
+                vial_image_with_green_bg,
+                # VIAL #3 - Final confirmation
+                "=== REFERENCE VIAL IMAGE #3 (MUST MATCH EXACTLY) ===",
+                vial_image_with_green_bg,
+                # Label to apply
+                "=== LABEL TO APPLY (only change text, not vial) ===",
                 label_image
             ],
             config=generation_config
@@ -3188,8 +3312,21 @@ REFERENCE SOURCE: The label image is your ONLY source. Ignore the expected conte
             logger.warning(f"Gemini API did not return image for {sku}")
             return None
 
+        # Validate vial consistency BEFORE background removal
+        vial_validation = _validate_vial_consistency(original_vial_for_validation, result_image)
+        if not vial_validation['is_valid']:
+            logger.warning(f"[VIAL VALIDATION] {sku}: Size/shape mismatch detected: {vial_validation['issues']}")
+            # Store validation result for potential retry
+            result_image._vial_validation = vial_validation
+        else:
+            logger.info(f"[VIAL VALIDATION] {sku}: Vial size/shape preserved ✓")
+            result_image._vial_validation = vial_validation
+
         # Remove background (using optimal color selected earlier)
         result_image = remove_background_with_reference(result_image, vial_image, label_reference=label_image, background_color=optimal_bg_color)
+
+        # Preserve validation data
+        result_image._vial_validation = vial_validation
 
         logger.info(f"[MOCKUP GEN] Final mockup for {sku}: mode={result_image.mode}, size={result_image.size}")
         return result_image
@@ -3826,10 +3963,13 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                     if crop_width > 0 and crop_height > 0:
                         label_image_cropped = label_image_cropped.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
 
-                # RETRY LOOP with verification
+                # RETRY LOOP with verification + VIAL SIZE VALIDATION
                 mockup_image = None
                 verification_result = None
                 last_errors = []
+
+                # Load original vial ONCE for validation reference
+                original_vial_for_validation = PIL.Image.open(BytesIO(vial_bytes))
 
                 for attempt in range(1, MAX_RETRIES + 1):
                     logger.info(f"[Thread {sku}] Attempt {attempt}/{MAX_RETRIES}")
@@ -3838,7 +3978,15 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
 
                     retry_hint = None
                     if attempt > 1 and last_errors:
-                        retry_hint = f"PREVIOUS ATTEMPT FAILED. Errors: {', '.join(last_errors)}."
+                        # Build detailed retry hint including vial size issues
+                        retry_hint = f"""PREVIOUS ATTEMPT #{attempt-1} FAILED!
+
+CRITICAL ERRORS TO FIX:
+{chr(10).join(f'  • {err}' for err in last_errors)}
+
+REMINDER: The vial size/shape MUST be IDENTICAL to the reference.
+Original vial dimensions: {original_vial_for_validation.size[0]}x{original_vial_for_validation.size[1]} pixels
+Output MUST match these dimensions EXACTLY!"""
 
                     # Composite label onto white background before sending to Gemini
                     label_for_gemini = label_image_cropped.copy()
@@ -3860,7 +4008,8 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                         product_name,
                         sku,
                         dosage,
-                        retry_hint
+                        retry_hint,
+                        original_vial_for_validation  # Pass original for validation
                     )
 
                     vial_image_copy.close()
@@ -3869,7 +4018,18 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                         last_errors = ["Failed to generate mockup image"]
                         continue
 
-                    # Verify mockup (use same composited label as sent to Gemini)
+                    # Check VIAL SIZE validation first (critical!)
+                    vial_validation = getattr(mockup_image, '_vial_validation', None)
+                    if vial_validation and not vial_validation.get('is_valid', True):
+                        vial_issues = vial_validation.get('issues', [])
+                        logger.warning(f"[Thread {sku}] ⚠️ VIAL SIZE MISMATCH: {vial_issues}")
+                        # Add vial issues to errors for retry
+                        last_errors = [f"VIAL SIZE ERROR: {issue}" for issue in vial_issues]
+                        # Don't continue to text verification if vial is wrong
+                        if attempt < MAX_RETRIES:
+                            continue
+
+                    # Verify mockup TEXT (use same composited label as sent to Gemini)
                     try:
                         verification_result = verify_mockup_with_sidebyside(
                             mockup_image,
@@ -3884,13 +4044,22 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                         last_errors = [f"Verification error: {str(e)}"]
                         continue
 
-                    if verification_result.get('is_valid', False):
-                        logger.info(f"[Thread {sku}] ✅ Verified on attempt {attempt}")
+                    # Combine vial validation + text verification
+                    is_valid = verification_result.get('is_valid', False)
+                    vial_ok = vial_validation.get('is_valid', True) if vial_validation else True
+
+                    if is_valid and vial_ok:
+                        logger.info(f"[Thread {sku}] ✅ VERIFIED on attempt {attempt} (text + vial size OK)")
                         break
                     else:
                         errors_list = verification_result.get('differences', [])
+                        if vial_validation and not vial_validation.get('is_valid', True):
+                            errors_list.extend([f"VIAL: {i}" for i in vial_validation.get('issues', [])])
                         last_errors = errors_list if errors_list else ["Verification failed"]
-                        logger.warning(f"[Thread {sku}] ❌ Failed attempt {attempt}")
+                        logger.warning(f"[Thread {sku}] ❌ Failed attempt {attempt}: {last_errors}")
+
+                # Clean up original vial reference
+                original_vial_for_validation.close()
 
                 label_image_original.close()
 
