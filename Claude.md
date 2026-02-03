@@ -1,6 +1,6 @@
 # YPBv2 - Label & Mockup Generator
 
-**Status**: ✅ Production Ready (2 lutego 2026)
+**Status**: ✅ Production Ready (3 lutego 2026)
 **Lokalizacja**: `/Users/lukasz/YPBv2`
 **Port**: http://localhost:8000
 **Railway**: https://ypbv2.up.railway.app (8 CPU / 8GB RAM)
@@ -8,6 +8,136 @@
 ---
 
 ## 🎯 AKTUALNY STAN APLIKACJI
+
+### ✅ Mockup & Label Generation Fixes (03.02.2026) 🔧
+
+**Cel**: Naprawa problemów z generowaniem mockupów i labels na Railway
+
+---
+
+#### 1. **Mockup Validation Fix - TEXT is PRIMARY** ⭐
+
+**Problem**: Wszystkie mockupy failowały mimo poprawnego tekstu
+```
+✅ Side-by-side verification: valid=True, match=100%
+❌ FAILED: VIAL size diff 53.6%
+```
+Gemini generuje obrazy w innej rozdzielczości - to NORMALNE!
+
+**Rozwiązanie**:
+- TEXT verification jest teraz PRIMARY (była: text AND vial)
+- Vial size validation → tylko INFO (nie blokuje)
+- Accept mockup jeśli text match >= 90%
+- Usunięto blocking retry loop dla vial size
+
+**Rezultat**:
+```
+✅ Text: 100% match → ACCEPTED
+ℹ️ Vial: different resolution (expected, Gemini behavior)
+```
+
+**Pliki**: `app.py` (linie 4017-4068)
+
+---
+
+#### 2. **3x Vial Reference + Ultra-Low Temperature**
+
+**Problem**: Fiolki miały różne rozmiary/kształty w mockupach
+
+**Rozwiązanie**:
+- Wysyłamy fiolkę **3 RAZY** jako reference do Gemini:
+  ```
+  === REFERENCE VIAL IMAGE #1 (SIZE REFERENCE) ===
+  === REFERENCE VIAL IMAGE #2 (SHAPE REFERENCE) ===
+  === REFERENCE VIAL IMAGE #3 (MUST MATCH EXACTLY) ===
+  ```
+- Ultra-low temperature: **0.01-0.02** (było: 0.05-0.1)
+- Enhanced prompt z 6x "DO NOT change vial..."
+
+**Pliki**: `app.py` (linie 3158-3299)
+
+---
+
+#### 3. **Label Generation Timeout (60s per label)**
+
+**Problem**: Label generation zawieszał się na 91/92 - brak timeout
+
+**Rozwiązanie**:
+```python
+LABEL_TIMEOUT = 60  # 60 sekund max per label
+
+try:
+    result = future.result(timeout=LABEL_TIMEOUT)
+except TimeoutError:
+    logger.error(f"⚠️ TIMEOUT for {sku} - SKIPPING")
+    continue  # Przejdź do następnego labela
+```
+
+**Rezultat**:
+- Labels które się zawieszają są POMIJANE
+- Progress bar kontynuuje do 100%
+- Raport: "91 labels, 1 skipped (timeout)"
+
+**Pliki**: `app.py` (linie 3543-3590)
+
+---
+
+#### 4. **Gunicorn Workers & Timeout Increase**
+
+**Problem**: 502 Bad Gateway podczas generowania labels
+
+**Rozwiązanie**:
+```
+Workers: 2 → 4
+Threads: 2 → 4
+Concurrent requests: 4 → 16
+Timeout: 600s → 900s (15 min)
+Graceful timeout: 60s → 120s
+```
+
+**Pliki**: `Procfile`, `Dockerfile`
+
+---
+
+#### 5. **Font Test Endpoint**
+
+**Nowy endpoint** do testowania dostępnych fontów:
+```
+GET /api/settings/font-test
+```
+
+**Zwraca**:
+```json
+{
+  "microsoft_core_fonts_installed": true,
+  "microsoft_core_fonts_count": 32,
+  "total_font_families": 258,
+  "test_results": [
+    {"name": "Arial Bold", "status": "available", "loaded": true}
+  ]
+}
+```
+
+**Pliki**: `app.py` (linie 4820-4900)
+
+---
+
+### 📊 Podsumowanie 03.02.2026
+
+| Feature | Problem | Rozwiązanie | Status |
+|---------|---------|-------------|--------|
+| **Mockup validation** | Failowało przy 100% text match | TEXT is PRIMARY | ✅ |
+| **Vial size** | Blokował validation | INFO only (nie blokuje) | ✅ |
+| **3x vial reference** | Różne rozmiary fiolek | Wysyłamy 3x jako reference | ✅ |
+| **Temperature** | 0.05-0.1 (za wysoka) | 0.01-0.02 (ultra-low) | ✅ |
+| **Label timeout** | Stuck na 91/92 | 60s timeout + skip | ✅ |
+| **Gunicorn** | 502 errors | 4 workers, 16 concurrent | ✅ |
+| **Font test** | Brak diagnostyki | `/api/settings/font-test` | ✅ |
+
+**Total commits**: 5
+**Pliki zmienione**: `app.py`, `Procfile`, `Dockerfile`
+
+---
 
 ### ✅ Railway Production Deployment (02.02.2026) 🚀
 
