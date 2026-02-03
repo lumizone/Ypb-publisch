@@ -3544,6 +3544,9 @@ def _generate_labels_task(job_id, tracking_id, template_path, products, text_are
 
                 # Create temp CSV for single product
                 import csv
+                import signal
+                from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
                 temp_dir = config.TEMP_DIR / f"label_{sku.replace('/', '_')}_{job_id}"
                 temp_dir.mkdir(parents=True, exist_ok=True)
                 temp_csv = temp_dir / "temp_product.csv"
@@ -3555,9 +3558,40 @@ def _generate_labels_task(job_id, tracking_id, template_path, products, text_are
                     filtered_product = {k: v for k, v in product.items() if k in fieldnames}
                     writer.writerow(filtered_product)
 
-                # Generate label
-                processor = BatchProcessor(template_path, temp_csv, text_areas=text_areas, text_alignments=text_alignments)
-                result = processor.process_batch(output_dir=temp_dir, limit=1)
+                # Generate label WITH TIMEOUT (60 seconds per label max)
+                def generate_single_label():
+                    processor = BatchProcessor(template_path, temp_csv, text_areas=text_areas, text_alignments=text_alignments)
+                    return processor.process_batch(output_dir=temp_dir, limit=1)
+
+                LABEL_TIMEOUT = 60  # 60 seconds per label
+                result = None
+                try:
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(generate_single_label)
+                        result = future.result(timeout=LABEL_TIMEOUT)
+                except FuturesTimeoutError:
+                    logger.error(f"⚠️ TIMEOUT generating label for {sku} (>{LABEL_TIMEOUT}s) - SKIPPING")
+                    errors.append(f"{sku}: Timeout after {LABEL_TIMEOUT}s")
+                    # Update progress and continue to next label
+                    progress_tracker.set(tracking_id, {
+                        'current': i + 1,
+                        'total': len(products),
+                        'status': 'processing',
+                        'message': f'Skipped (timeout): {product_name}',
+                        'percentage': int(((i + 1) / len(products)) * 100)
+                    })
+                    continue  # Skip to next product
+                except Exception as label_error:
+                    logger.error(f"Error in label generation for {sku}: {label_error}")
+                    errors.append(f"{sku}: {str(label_error)}")
+                    progress_tracker.set(tracking_id, {
+                        'current': i + 1,
+                        'total': len(products),
+                        'status': 'processing',
+                        'message': f'Error: {product_name}',
+                        'percentage': int(((i + 1) / len(products)) * 100)
+                    })
+                    continue  # Skip to next product
 
                 # Find generated files and copy all formats (SVG, PNG, PDF)
                 for res in result.get('results', []):
