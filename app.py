@@ -4817,6 +4817,92 @@ def test_api_key():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/settings/font-test', methods=['GET'])
+def font_test():
+    """Test which fonts are available and working on the system."""
+    try:
+        from text_formatter import TextFormatter
+        import subprocess
+
+        formatter = TextFormatter()
+
+        # Test fonts to check
+        test_fonts = [
+            ('Arial', 'arial'),
+            ('Arial Bold', 'arial bold'),
+            ('Arial Italic', 'arial italic'),
+            ('Times New Roman', 'times new roman'),
+            ('Times New Roman Bold', 'times new roman bold'),
+            ('Verdana', 'verdana'),
+            ('Courier New', 'courier new'),
+            ('Liberation Sans', 'liberation sans'),
+            ('DejaVu Sans', 'dejavu sans'),
+        ]
+
+        results = []
+        for display_name, font_key in test_fonts:
+            try:
+                # Try to load the font
+                candidates = formatter._map_font_name(font_key)
+                font = formatter._get_pil_font(font_key, 12.0)
+
+                # Get font info
+                font_info = {
+                    'name': display_name,
+                    'status': 'available' if font else 'missing',
+                    'candidates': candidates[:3],  # First 3 candidates
+                    'loaded': font is not None
+                }
+                results.append(font_info)
+            except Exception as e:
+                results.append({
+                    'name': display_name,
+                    'status': 'error',
+                    'error': str(e),
+                    'loaded': False
+                })
+
+        # Get system font count
+        try:
+            fc_list = subprocess.run(['fc-list', ':', 'family'],
+                                    capture_output=True, text=True, timeout=5)
+            families = set(line.split(',')[0].strip()
+                          for line in fc_list.stdout.split('\n') if line)
+            total_fonts = len(families)
+        except Exception:
+            total_fonts = 'unknown'
+
+        # Check if Microsoft Core Fonts directory exists
+        import os
+        msfonts_dir = '/usr/share/fonts/truetype/msttcorefonts'
+        msfonts_installed = os.path.exists(msfonts_dir)
+
+        if msfonts_installed:
+            try:
+                msfonts_count = len([f for f in os.listdir(msfonts_dir) if f.endswith('.ttf')])
+            except Exception:
+                msfonts_count = 0
+        else:
+            msfonts_count = 0
+
+        return jsonify({
+            'success': True,
+            'total_font_families': total_fonts,
+            'microsoft_core_fonts_installed': msfonts_installed,
+            'microsoft_core_fonts_count': msfonts_count,
+            'test_results': results,
+            'font_directories': [
+                '/usr/share/fonts/truetype/msttcorefonts',
+                '/usr/share/fonts/truetype/liberation',
+                '/usr/share/fonts/truetype/dejavu'
+            ]
+        })
+
+    except Exception as e:
+        logger.error(f"Error testing fonts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 def extract_aria_labels_from_svg(svg_path: Path) -> str:
     """
     Extract all aria-label attributes from SVG (used when text is converted to paths).

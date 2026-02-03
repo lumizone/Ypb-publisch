@@ -31,23 +31,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Microsoft Core Fonts (Arial, Times New Roman, Courier, etc.)
 # These are the ACTUAL fonts used in Adobe Illustrator and Microsoft Office
-RUN mkdir -p /tmp/msfonts && cd /tmp/msfonts \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/andale32.exe \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arial32.exe \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arialb32.exe \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/comic32.exe \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/courie32.exe \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/georgi32.exe \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/impact32.exe \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/times32.exe \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/trebuc32.exe \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/verdan32.exe \
-    && wget -q https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/webdin32.exe \
-    && for exe in *.exe; do cabextract -q $exe; done \
+# NOTE: Build continues even if font download fails (Liberation fonts are fallback)
+RUN set -x \
+    && mkdir -p /tmp/msfonts \
+    && cd /tmp/msfonts \
+    && echo "📥 Downloading Microsoft Core Fonts from SourceForge..." \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/andale32.exe || echo "⚠ andale32 failed") \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arial32.exe || echo "⚠ arial32 failed") \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arialb32.exe || echo "⚠ arialb32 failed") \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/comic32.exe || echo "⚠ comic32 failed") \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/courie32.exe || echo "⚠ courie32 failed") \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/georgi32.exe || echo "⚠ georgi32 failed") \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/impact32.exe || echo "⚠ impact32 failed") \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/times32.exe || echo "⚠ times32 failed") \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/trebuc32.exe || echo "⚠ trebuc32 failed") \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/verdan32.exe || echo "⚠ verdan32 failed") \
+    && (wget --timeout=30 --tries=3 https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/webdin32.exe || echo "⚠ webdin32 failed") \
+    && echo "📦 Extracting font files..." \
+    && for exe in *.exe; do \
+         if [ -f "$exe" ]; then \
+           cabextract -q "$exe" 2>/dev/null || echo "⚠ Failed to extract $exe"; \
+         fi \
+       done \
     && mkdir -p /usr/share/fonts/truetype/msttcorefonts \
-    && cp *.ttf /usr/share/fonts/truetype/msttcorefonts/ \
+    && if ls *.ttf >/dev/null 2>&1; then \
+         cp *.ttf /usr/share/fonts/truetype/msttcorefonts/ \
+         && echo "✅ Installed $(ls *.ttf | wc -l) Microsoft Core Fonts"; \
+       else \
+         echo "⚠ No TTF files found - Liberation fonts will be used as fallback"; \
+       fi \
     && fc-cache -f -v \
-    && cd / && rm -rf /tmp/msfonts
+    && cd / \
+    && rm -rf /tmp/msfonts \
+    && echo "🔍 Font verification:" \
+    && fc-list | grep -i "arial\|liberation" | head -10 || true
 
 # Installed fonts:
 # - Microsoft Core: Arial, Arial Bold, Arial Italic, Arial Bold Italic
