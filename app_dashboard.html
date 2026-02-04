@@ -5,74 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Label Generator</title>
     <style>
-        /* ULTRA HIGH PRIORITY - Force black text on ALL inputs and selects - MUST BE FIRST */
-        input[type="text"] { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
+        /* CSS Variables for consistent theming */
+        :root {
+            --color-text: #37352f;
+            --color-text-light: #787774;
+            --color-bg: #ffffff;
+            --color-bg-secondary: #f7f6f3;
+            --color-border: #e9e9e7;
+            --color-primary: #2383e2;
+            --color-primary-hover: #1a6fbf;
+            --color-success: #34a853;
+            --color-success-hover: #2d9249;
+            --color-success-bg: #e8f5e9;
+            --color-danger: #eb5757;
+            --color-danger-hover: #d44040;
+            --color-danger-bg: #ffebee;
+            --color-warning: #ff9800;
+            --color-info: #2eaadc;
+            --color-info-bg: #e3f2fd;
+            --color-dark: #37352f;
+            --color-dark-hover: #2e2e2c;
         }
-        input[type="text"]:focus { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        input[type="text"]:hover { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        input[type="text"]:active { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        select {
-            color: #37352f !important;
-            -webkit-text-fill-color: #37352f !important;
+
+        /* Force text color on inputs (single rule replaces 150+ lines) */
+        input[type="text"],
+        select,
+        .editable-cell,
+        td input,
+        table input,
+        #productsTableBody input {
+            color: var(--color-text) !important;
+            -webkit-text-fill-color: var(--color-text) !important;
         }
         select option {
-            color: #37352f !important;
+            color: var(--color-text) !important;
             background-color: #fff !important;
-        }
-        .editable-cell { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        .editable-cell:focus { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        .editable-cell:hover { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        td input { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        td input[type="text"] { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        td .editable-cell { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        table input { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        table input[type="text"] { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        #productsTableBody input { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        #productsTableBody input[type="text"] { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
-        }
-        #productsTableBody .editable-cell { 
-            color: #37352f !important; 
-            -webkit-text-fill-color: #37352f !important;
         }
         
         /* Modal styles */
@@ -188,14 +155,6 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-        }
-        
-        /* Global override for all text inputs - highest priority */
-        input[type="text"],
-        input[type="text"]:focus,
-        input[type="text"]:active,
-        input[type="text"]:hover {
-            color: #37352f !important;
         }
         
         body {
@@ -738,26 +697,124 @@
         
         .progress-bar {
             width: 100%;
-            height: 6px;
-            background: #e9e9e7;
-            border-radius: 3px;
+            height: 10px;
+            background: var(--color-border);
+            border-radius: 5px;
             overflow: hidden;
         }
-        
+
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #37352f 0%, #5a564e 100%);
+            background: linear-gradient(90deg, var(--color-primary) 0%, #4aa3f5 100%);
+            background-size: 200% 100%;
             width: 0%;
             transition: width 0.4s ease-out;
-            border-radius: 4px;
+            border-radius: 5px;
+            position: relative;
         }
-        
+
+        .progress-fill.active {
+            background-image: linear-gradient(
+                -45deg,
+                rgba(255,255,255,0.15) 25%,
+                transparent 25%,
+                transparent 50%,
+                rgba(255,255,255,0.15) 50%,
+                rgba(255,255,255,0.15) 75%,
+                transparent 75%,
+                transparent
+            );
+            background-size: 20px 20px;
+            animation: progressStripes 0.6s linear infinite;
+        }
+
+        @keyframes progressStripes {
+            0% { background-position: 20px 0; }
+            100% { background-position: 0 0; }
+        }
+
         .progress-text {
             margin-top: 8px;
-            font-size: 12px;
-            color: #787774;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--color-text);
             text-align: center;
         }
+
+        /* Button spinner */
+        .btn-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: btnSpin 0.6s linear infinite;
+        }
+        @keyframes btnSpin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Notification toast stack */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 8px;
+            max-width: 400px;
+        }
+        .toast {
+            padding: 12px 40px 12px 16px;
+            color: white;
+            border-radius: 6px;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: toastIn 0.3s ease;
+            position: relative;
+            line-height: 1.4;
+        }
+        .toast-close {
+            position: absolute;
+            top: 8px;
+            right: 10px;
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.7);
+            font-size: 16px;
+            cursor: pointer;
+            padding: 2px 6px;
+            line-height: 1;
+        }
+        .toast-close:hover { color: #fff; }
+        .toast.toast-error { background: var(--color-danger); }
+        .toast.toast-success { background: var(--color-success); }
+        .toast.toast-info { background: var(--color-info); }
+        .toast.toast-warning { background: var(--color-warning); }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(40px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes toastOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(40px); }
+        }
+
+        /* Step badge */
+        .step-badge {
+            display: inline-block;
+            background: var(--color-primary);
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        .step-badge.step-green { background: var(--color-success); }
         
         .default-file {
             font-size: 12px;
@@ -933,25 +990,7 @@
             color: #787774;
         }
         
-        /* Force black text in database table - highest priority */
-        #productsTable input[type="text"],
-        #productsTable .editable-cell,
-        #page-database input[type="text"],
-        #page-database .editable-cell,
-        #productsTableBody input[type="text"],
-        #productsTableBody .editable-cell {
-            color: #37352f !important;
-        }
-        
-        #productsTable td,
-        #productsTableBody td {
-            color: #37352f !important;
-        }
-        
-        #productsTable td input,
-        #productsTableBody td input {
-            color: #37352f !important;
-        }
+        /* Database table text color (inherits from root rule above) */
     </style>
 </head>
 <body>
@@ -1010,7 +1049,7 @@
                 <!-- Upload Vial -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Upload Vial</div>
+                        <div class="card-title"><span class="step-badge">1</span> Upload Vial</div>
                         <div class="card-description">Upload the vial image</div>
                     </div>
                     <div class="form-group">
@@ -1026,7 +1065,7 @@
                 <!-- Upload Label Template -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Label Template</div>
+                        <div class="card-title"><span class="step-badge">2</span> Label Template</div>
                         <div class="card-description">Upload your SVG label template</div>
                     </div>
                     <div class="form-group">
@@ -1102,7 +1141,7 @@
                 <!-- Template Preview with Text Areas -->
                 <div class="card" id="templatePreviewCardCombined" style="display: none;">
                     <div class="card-header">
-                        <div class="card-title">Template Preview</div>
+                        <div class="card-title"><span class="step-badge">3</span> Template Preview</div>
                         <div class="card-description">Set text areas and alignment (LEFT/CENTER/RIGHT) for Product Name and Ingredients</div>
                     </div>
                     <div class="form-group">
@@ -1196,7 +1235,7 @@
                 <!-- Product Data Info -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Product Data</div>
+                        <div class="card-title"><span class="step-badge">4</span> Product Data</div>
                         <div class="card-description">Product data will be taken from the Database tab</div>
                     </div>
                     <div class="form-group">
@@ -1210,7 +1249,7 @@
                 <!-- Step 1: Generate Labels Button -->
                 <div class="card" style="background: #f0f7ff; border: 1px solid #4285f4;">
                     <div class="card-header">
-                        <div class="card-title">Step 1: Generate Labels</div>
+                        <div class="card-title"><span class="step-badge">5</span> Generate Labels</div>
                         <div class="card-description">Generate labels with product data from database (like in Generate Labels tab)</div>
                     </div>
                     <button type="button" class="btn btn-primary" id="generateLabelsCombinedBtn" onclick="generateLabelsCombined()">
@@ -1243,7 +1282,7 @@
                 <!-- Step 2: Generate Mockups Button -->
                 <div class="card" id="mockupStepCard" style="display: none; background: #f0fff4; border: 1px solid #34a853;">
                     <div class="card-header">
-                        <div class="card-title">Step 2: Generate Mockups</div>
+                        <div class="card-title"><span class="step-badge step-green">6</span> Generate Mockups</div>
                         <div class="card-description">
                             Generate mockups with vial using generated labels (parallel processing - 4x faster)<br>
                             <small style="color: #34a853;">✓ Auto-verification: if product name/SKU/ingredients are wrong, mockup is auto-regenerated</small>
@@ -3534,30 +3573,35 @@
             }
         }
         
+        // Toast container (created once)
+        let _toastContainer = null;
+        function _getToastContainer() {
+            if (!_toastContainer || !_toastContainer.parentNode) {
+                _toastContainer = document.createElement('div');
+                _toastContainer.className = 'toast-container';
+                document.body.appendChild(_toastContainer);
+            }
+            return _toastContainer;
+        }
+
         function showNotification(message, type = 'info') {
-            // Simple notification - create a toast element
+            const container = _getToastContainer();
             const toast = document.createElement('div');
-            toast.style.cssText = `
-                position: fixed;
-                bottom: 20px;
-                right: 20px;
-                padding: 12px 20px;
-                background: ${type === 'error' ? '#eb5757' : type === 'success' ? '#27ae60' : '#2eaadc'};
-                color: white;
-                border-radius: 6px;
-                font-size: 14px;
-                z-index: 10000;
-                animation: slideIn 0.3s ease;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            `;
-            toast.textContent = message;
-            document.body.appendChild(toast);
-            
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `${message}<button class="toast-close" onclick="this.parentElement.remove()">&times;</button>`;
+            container.appendChild(toast);
+
+            // Auto-dismiss (longer for errors, shorter for success)
+            const duration = type === 'error' ? 6000 : type === 'success' ? 4000 : 3500;
             setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transition = 'opacity 0.3s';
+                toast.style.animation = 'toastOut 0.3s ease forwards';
                 setTimeout(() => toast.remove(), 300);
-            }, 3000);
+            }, duration);
+
+            // Max 4 toasts visible
+            while (container.children.length > 4) {
+                container.firstChild.remove();
+            }
         }
         
         async function resetApplication() {
@@ -3878,7 +3922,7 @@
         // Continue to template preview after analysis (Generate Labels)
         async function continueToPreviewGenerate() {
             if (!convertedSVGDataGenerate) {
-                alert('No converted SVG data available');
+                showNotification('No converted SVG data available', 'error');
                 return;
             }
             
@@ -4403,7 +4447,7 @@
             
             // Validate
             if (!templateFile && !convertedSVGDataGenerate) {
-                alert('Please upload a label template');
+                showNotification('Please upload a label template', 'warning');
                 return;
             }
             
@@ -4426,8 +4470,11 @@
             const resultsCard = document.getElementById('generatedResultsCard');
             
             submitBtn.disabled = true;
+            submitBtn.dataset.originalText = submitBtn.textContent;
+            submitBtn.innerHTML = '<span class="btn-spinner"></span> Generating...';
             progress.style.display = 'block';
             progressFill.style.width = '5%';
+            progressFill.classList.add('active');
             progressText.textContent = 'Starting...';
             resultsCard.style.display = 'none';
             
@@ -4443,27 +4490,28 @@
                     if (progressData.status === 'processing') {
                         const pct = progressData.percentage || 0;
                         progressFill.style.width = Math.max(pct, 5) + '%';
-                        progressText.textContent = `${progressData.message} (${progressData.current}/${progressData.total})`;
+                        progressText.textContent = `${progressData.message} (${progressData.current}/${progressData.total}) - ${Math.round(pct)}%`;
                     }
                 } catch (e) {
                     // Ignore polling errors
                 }
             }, 1000);
-            
+
             try {
                 const response = await fetch('/api/generate-labels-combined', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 clearInterval(progressInterval);
                 const data = await response.json();
-                
+
                 if (response.ok && data.success) {
                     console.log('Generate Labels - Success:', data);
                     console.log('Labels count:', data.labels ? data.labels.length : 0);
-                    
+
                     progressFill.style.width = '100%';
+                    progressFill.classList.remove('active');
                     progressText.textContent = 'Complete!';
                     
                     // Display labels preview
@@ -4494,12 +4542,14 @@
             } finally {
                 clearInterval(progressInterval);
                 submitBtn.disabled = false;
+                submitBtn.textContent = submitBtn.dataset.originalText || 'Generate Labels';
+                progressFill.classList.remove('active');
                 setTimeout(() => {
                     progress.style.display = 'none';
                 }, 1500);
             }
         });
-        
+
         // Display generated labels (standalone version for Generate Labels tab)
         function displayGeneratedLabelsStandalone(labels, jobId, zipFile) {
             const preview = document.getElementById('generatedLabelsPreviewStandalone');
@@ -4532,10 +4582,11 @@
                 preview.appendChild(item);
             });
             
-            // Set download link
+            // Set download link with file count
             const downloadLink = document.getElementById('downloadZipLinkStandalone');
             if (downloadLink && zipFile) {
                 downloadLink.href = `/api/download-labels/${jobId}`;
+                downloadLink.textContent = `Download Labels ZIP (${labels.length} labels)`;
             }
         }
         
@@ -4565,21 +4616,6 @@
                         loading.style.color = '#787774';
                     } else {
                         renderTable();
-                        // Force black text color after table is rendered - multiple attempts
-                        const forceAllBlack = () => {
-                            const allInputs = document.querySelectorAll('#productsTableBody input[type="text"]');
-                            allInputs.forEach(input => {
-                                input.style.color = '#37352f';
-                                input.style.setProperty('color', '#37352f', 'important');
-                                if (input.style) {
-                                    input.style.color = '#37352f';
-                                }
-                            });
-                        };
-                        forceAllBlack();
-                        setTimeout(forceAllBlack, 50);
-                        setTimeout(forceAllBlack, 100);
-                        setTimeout(forceAllBlack, 200);
                         window.productsLoaded = true;
                     }
                 } else {
@@ -4813,7 +4849,7 @@
                     throw new Error(data.error || 'Update failed');
                 }
             } catch (error) {
-                alert('Error saving: ' + error.message);
+                showNotification('Error saving: ' + error.message, 'error');
                 cell.value = product[field] || '';
             }
         }
@@ -4832,7 +4868,7 @@
                     throw new Error(data.error || 'Delete failed');
                 }
             } catch (error) {
-                alert('Error deleting: ' + error.message);
+                showNotification('Error deleting: ' + error.message, 'error');
             }
         }
         
@@ -4867,13 +4903,13 @@
                     throw new Error(data.error || 'Add failed');
                 }
             } catch (error) {
-                alert('Error adding product: ' + error.message);
+                showNotification('Error adding product: ' + error.message, 'error');
             }
         });
         
         document.getElementById('btnBulkEdit').addEventListener('click', function() {
             if (selectedIds.size === 0) {
-                alert('Please select products to edit');
+                showNotification('Please select products to edit', 'warning');
                 return;
             }
             document.getElementById('bulkEditPanel').classList.add('active');
@@ -4888,7 +4924,7 @@
         
         document.getElementById('btnApplyBulk').addEventListener('click', async function() {
             if (selectedIds.size === 0) {
-                alert('Please select products to edit');
+                showNotification('Please select products to edit', 'warning');
                 return;
             }
             
@@ -4898,7 +4934,7 @@
             
             // Check if at least one field has a value
             if (!productValue && !ingredientsValue && !skuValue) {
-                alert('Please enter at least one field to update');
+                showNotification('Please enter at least one field to update', 'warning');
                 return;
             }
             
@@ -4930,7 +4966,7 @@
                     throw new Error(data.error || 'Bulk update failed');
                 }
             } catch (error) {
-                alert('Error updating products: ' + error.message);
+                showNotification('Error updating products: ' + error.message, 'error');
             }
         });
         
@@ -4942,7 +4978,7 @@
                 for (const cell of editedCells) {
                     await saveCell(cell);
                 }
-                alert('All changes saved!');
+                showNotification('All changes saved!', 'success');
             });
         }
         
@@ -4953,7 +4989,7 @@
             const file = fileInput.files[0];
             
             if (!file) {
-                alert('Please select a CSV file');
+                showNotification('Please select a CSV file', 'warning');
                 return;
             }
             
@@ -5682,7 +5718,7 @@
                     // Display image and setup selection
                     previewImg.onerror = function(error) {
                         console.error('Image load error:', error);
-                        alert('Błąd podczas wczytywania obrazu');
+                        showNotification('Error loading image', 'error');
                     };
                     
                     previewImg.onload = function() {
@@ -5696,7 +5732,7 @@
                     
                 } catch (error) {
                     console.error('Error processing label file:', error);
-                    alert('Błąd podczas przetwarzania pliku: ' + error.message);
+                    showNotification('Error processing file: ' + error.message, 'error');
                 }
             } else {
                 preview.style.display = 'none';
@@ -6083,7 +6119,7 @@
             const fetchBtn = document.getElementById('fetchProductBtn');
             
             if (!skuValue) {
-                alert('Proszę wpisać SKU');
+                showNotification('Please enter a SKU', 'warning');
                 return;
             }
             
@@ -6109,14 +6145,14 @@
                         document.getElementById('fetchedSku').textContent = fetchedProductData.sku;
                         productDataDisplay.style.display = 'block';
                     } else {
-                        alert('Nie znaleziono produktu o podanym SKU: ' + skuValue);
+                        showNotification('Product not found for SKU: ' + skuValue, 'error');
                         productDataDisplay.style.display = 'none';
                     }
                 } else {
                     throw new Error(data.error || 'Failed to fetch products');
                 }
             } catch (error) {
-                alert('Błąd podczas pobierania danych: ' + error.message);
+                showNotification('Error fetching data: ' + error.message, 'error');
                 productDataDisplay.style.display = 'none';
             } finally {
                 fetchBtn.disabled = false;
@@ -6133,7 +6169,7 @@
             const fetchBtn = this;
             
             if (!sku) {
-                alert('Proszę wpisać SKU');
+                showNotification('Please enter a SKU', 'warning');
                 return;
             }
             
@@ -6176,7 +6212,7 @@
                     } else {
                         fetchedProductData = null;
                         productDataDisplay.style.display = 'none';
-                        alert('Nie znaleziono produktu o podanym SKU: ' + sku);
+                        showNotification('Product not found for SKU: ' + sku, 'error');
                     }
                 } else {
                     throw new Error(data.error || 'Failed to fetch products');
@@ -6185,7 +6221,7 @@
                 console.error('Error fetching product data:', error);
                 fetchedProductData = null;
                 productDataDisplay.style.display = 'none';
-                alert('Błąd podczas pobierania danych: ' + error.message);
+                showNotification('Error fetching data: ' + error.message, 'error');
             } finally {
                 fetchBtn.disabled = false;
                 fetchBtn.textContent = 'Pobierz dane';
@@ -6202,17 +6238,17 @@
             const sku = document.getElementById('sku').value.trim();
             
             if (!vialFile || !labelFile) {
-                alert('Proszę wgrać oba obrazy: vial i label');
+                showNotification('Please upload both images: vial and label', 'warning');
                 return;
             }
             
             if (!sku) {
-                alert('Proszę wpisać SKU');
+                showNotification('Please enter a SKU', 'warning');
                 return;
             }
             
             if (!fetchedProductData) {
-                alert('Proszę najpierw pobrać dane produktu klikając przycisk "Pobierz dane"');
+                showNotification('Please fetch product data first using the "Get data" button', 'warning');
                 return;
             }
             
@@ -6414,7 +6450,7 @@
         // Continue to template preview after analysis
         async function continueToPreviewCombined() {
             if (!convertedSVGDataCombined) {
-                alert('No converted SVG data available');
+                showNotification('No converted SVG data available', 'error');
                 return;
             }
             
@@ -7551,10 +7587,13 @@
             }
 
             btn.disabled = true;
+            btn.dataset.originalText = btn.textContent;
+            btn.innerHTML = '<span class="btn-spinner"></span> Generating...';
             status.textContent = 'Starting generation...';
             status.className = 'status';
             progress.style.display = 'block';
             progressFill.style.width = '5%';
+            progressFill.classList.add('active');
             progressText.textContent = 'Starting...';
             labelsCard.style.display = 'none';
             mockupStepCard.style.display = 'none';
@@ -7577,7 +7616,7 @@
                         progressFill.style.width = Math.max(pct, 5) + '%';
                         const message = progressData.message || `${pct}%`;
                         const counts = progressData.total ? ` (${progressData.current}/${progressData.total})` : '';
-                        progressText.textContent = message + counts;
+                        progressText.textContent = message + counts + ` - ${Math.round(pct)}%`;
                     }
                     else if (progressData.status === 'completed') {
                         // Generation complete - fetch results
@@ -7585,16 +7624,15 @@
                         await fetchGenerationResults(jobId);
                     }
                     else if (progressData.status === 'failed') {
-                        // Generation failed
                         clearInterval(progressInterval);
                         status.textContent = progressData.message || 'Generation failed';
                         status.className = 'status error';
                         progressFill.style.width = '100%';
+                        progressFill.classList.remove('active');
                         progressText.textContent = 'Failed';
                         btn.disabled = false;
-                        setTimeout(() => {
-                            progress.style.display = 'none';
-                        }, 2000);
+                        btn.textContent = btn.dataset.originalText || 'Generate Labels';
+                        setTimeout(() => { progress.style.display = 'none'; }, 2000);
                     }
                 } catch (e) {
                     // Ignore polling errors
@@ -7602,7 +7640,6 @@
             }, 1000);
 
             try {
-                // Send request (returns immediately with job_id)
                 const response = await fetch('/api/generate-labels-combined', {
                     method: 'POST',
                     body: formData
@@ -7615,28 +7652,27 @@
                     status.textContent = 'Generating in background...';
                     status.className = 'status';
                     console.log('Background generation started, job_id:', jobId);
-                    // Polling will handle the rest
                 } else {
                     clearInterval(progressInterval);
                     status.textContent = data.error || 'Failed to start generation';
                     status.className = 'status error';
                     progressFill.style.width = '100%';
+                    progressFill.classList.remove('active');
                     progressText.textContent = 'Error';
                     btn.disabled = false;
-                    setTimeout(() => {
-                        progress.style.display = 'none';
-                    }, 2000);
+                    btn.textContent = btn.dataset.originalText || 'Generate Labels';
+                    setTimeout(() => { progress.style.display = 'none'; }, 2000);
                 }
             } catch (error) {
                 clearInterval(progressInterval);
                 status.textContent = 'Error: ' + error.message;
                 status.className = 'status error';
                 progressFill.style.width = '100%';
+                progressFill.classList.remove('active');
                 progressText.textContent = 'Error';
                 btn.disabled = false;
-                setTimeout(() => {
-                    progress.style.display = 'none';
-                }, 2000);
+                btn.textContent = btn.dataset.originalText || 'Generate Labels';
+                setTimeout(() => { progress.style.display = 'none'; }, 2000);
             }
         }
 
@@ -7674,7 +7710,9 @@
 
                     // Set download link
                     if (data.zip_file) {
-                        document.getElementById('downloadLabelsZipLink').href = `/api/download-labels/${data.job_id}`;
+                        const dlLink = document.getElementById('downloadLabelsZipLink');
+                        dlLink.href = `/api/download-labels/${data.job_id}`;
+                        dlLink.textContent = `Download Labels ZIP (${data.labels.length} labels)`;
                     }
 
                     // Show step 2
@@ -7694,12 +7732,14 @@
                 progressText.textContent = 'Error';
             } finally {
                 btn.disabled = false;
+                btn.textContent = btn.dataset.originalText || 'Generate Labels';
+                progressFill.classList.remove('active');
                 setTimeout(() => {
                     progress.style.display = 'none';
                 }, 1500);
             }
         }
-        
+
         // Display generated labels preview
         function displayGeneratedLabels(labels) {
             console.log('displayGeneratedLabels called with', labels.length, 'labels');
@@ -7781,20 +7821,21 @@
             formData.append('enable_verification', 'true');
             
             btn.disabled = true;
+            btn.dataset.originalText = btn.textContent;
+            btn.innerHTML = '<span class="btn-spinner"></span> Generating...';
             status.textContent = 'Generating mockups...';
             status.className = 'status';
             progress.style.display = 'block';
             progressFill.style.width = '5%';
+            progressFill.classList.add('active');
             progressText.textContent = 'Starting...';
             resultsCard.style.display = 'none';
 
-            // Generate tracking ID for progress
             const mockupTrackingId = 'mockups_' + Date.now();
             formData.append('tracking_id', mockupTrackingId);
 
             let mockupJobId = null;
 
-            // Start polling for progress
             const mockupProgressInterval = setInterval(async () => {
                 try {
                     const progressResponse = await fetch(`/api/generation-progress/${mockupTrackingId}`);
@@ -7803,7 +7844,7 @@
                     if (progressData.status === 'processing') {
                         const pct = progressData.percentage || 0;
                         progressFill.style.width = Math.max(pct, 5) + '%';
-                        progressText.textContent = `${progressData.message} (${progressData.current}/${progressData.total})`;
+                        progressText.textContent = `${progressData.message} (${progressData.current}/${progressData.total}) - ${Math.round(pct)}%`;
                     }
                     else if (progressData.status === 'completed') {
                         clearInterval(mockupProgressInterval);
@@ -7814,8 +7855,10 @@
                         status.textContent = progressData.message || 'Generation failed';
                         status.className = 'status error';
                         progressFill.style.width = '100%';
+                        progressFill.classList.remove('active');
                         progressText.textContent = 'Failed';
                         btn.disabled = false;
+                        btn.textContent = btn.dataset.originalText || 'Generate Mockups';
                         setTimeout(() => { progress.style.display = 'none'; }, 2000);
                     }
                 } catch (e) {
@@ -7824,7 +7867,6 @@
             }, 1000);
 
             try {
-                // Send request (returns immediately with job_id)
                 const response = await fetch('/api/generate-mockups-from-labels', {
                     method: 'POST',
                     body: formData
@@ -7836,14 +7878,15 @@
                     mockupJobId = data.job_id;
                     status.textContent = 'Generating mockups in background...';
                     status.className = 'status';
-                    // Polling will handle the rest
                 } else {
                     clearInterval(mockupProgressInterval);
                     status.textContent = data.error || 'Failed to start mockup generation';
                     status.className = 'status error';
                     progressFill.style.width = '100%';
+                    progressFill.classList.remove('active');
                     progressText.textContent = 'Error';
                     btn.disabled = false;
+                    btn.textContent = btn.dataset.originalText || 'Generate Mockups';
                     setTimeout(() => { progress.style.display = 'none'; }, 2000);
                 }
             } catch (error) {
@@ -7851,8 +7894,10 @@
                 status.textContent = 'Error: ' + error.message;
                 status.className = 'status error';
                 progressFill.style.width = '100%';
+                progressFill.classList.remove('active');
                 progressText.textContent = 'Error';
                 btn.disabled = false;
+                btn.textContent = btn.dataset.originalText || 'Generate Mockups';
                 setTimeout(() => { progress.style.display = 'none'; }, 2000);
             }
         }
@@ -7884,8 +7929,13 @@
                     resultsCard.style.display = 'block';
 
                     if (data.zip_file) {
-                        document.getElementById('downloadCombinedZipLink').href = `/api/download-mockups/${data.job_id}`;
-                        document.getElementById('downloadAllCombinedZipLink').href = `/api/download-combined-all/${labelsJobIdCombined}/${data.job_id}`;
+                        const mockupCount = data.mockups ? data.mockups.length : 0;
+                        const dlMockups = document.getElementById('downloadCombinedZipLink');
+                        dlMockups.href = `/api/download-mockups/${data.job_id}`;
+                        dlMockups.textContent = `Download Mockups ZIP (${mockupCount} mockups)`;
+                        const dlAll = document.getElementById('downloadAllCombinedZipLink');
+                        dlAll.href = `/api/download-combined-all/${labelsJobIdCombined}/${data.job_id}`;
+                        dlAll.textContent = `Download All (${(generatedLabelsCombined || []).length} labels + ${mockupCount} mockups)`;
                     }
 
                     if (data.error_details && data.error_details.length > 0) {
@@ -7894,17 +7944,23 @@
                     }
 
                     btn.disabled = false;
+                    btn.textContent = btn.dataset.originalText || 'Generate Mockups';
+                    progressFill.classList.remove('active');
                     setTimeout(() => { progress.style.display = 'none'; }, 2000);
                 } else {
                     status.textContent = data.error || 'Failed to fetch results';
                     status.className = 'status error';
                     btn.disabled = false;
+                    btn.textContent = btn.dataset.originalText || 'Generate Mockups';
+                    progressFill.classList.remove('active');
                     setTimeout(() => { progress.style.display = 'none'; }, 2000);
                 }
             } catch (error) {
                 status.textContent = 'Error fetching results: ' + error.message;
                 status.className = 'status error';
                 btn.disabled = false;
+                btn.textContent = btn.dataset.originalText || 'Generate Mockups';
+                progressFill.classList.remove('active');
                 setTimeout(() => { progress.style.display = 'none'; }, 2000);
             }
         }
@@ -8067,7 +8123,7 @@
         
         async function convertAItoSVG() {
             if (!uploadedAIFile) {
-                alert('Please upload an AI file first');
+                showNotification('Please upload an AI file first', 'warning');
                 return;
             }
             
@@ -8232,7 +8288,7 @@
                 statusEl.textContent = '❌ Error: ' + error.message;
                 statusEl.style.color = '#eb5757';
                 
-                alert('Conversion failed: ' + error.message + '\n\nPlease make sure:\n1. Inkscape is installed\n2. The file is a valid AI file\n3. The server is running');
+                showNotification('Conversion failed: ' + error.message, 'error');
             } finally {
                 convertBtn.disabled = false;
                 convertBtn.textContent = 'Convert to SVG';
@@ -8261,7 +8317,7 @@
         
         function downloadSVG() {
             if (!convertedSVGData) {
-                alert('No SVG data available');
+                showNotification('No SVG data available', 'error');
                 return;
             }
             
