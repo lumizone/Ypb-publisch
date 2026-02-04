@@ -58,6 +58,21 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 app.config['UPLOAD_FOLDER'] = config.UPLOAD_DIR
 
+# GZIP compression - reduces 368KB HTML to ~50KB (7x faster loading)
+try:
+    from flask_compress import Compress
+    app.config['COMPRESS_MIMETYPES'] = [
+        'text/html', 'text/css', 'text/xml', 'text/plain',
+        'application/json', 'application/javascript',
+        'image/svg+xml'
+    ]
+    app.config['COMPRESS_MIN_SIZE'] = 500  # Compress responses > 500 bytes
+    app.config['COMPRESS_LEVEL'] = 6  # Compression level (1-9, 6 = good balance)
+    Compress(app)
+    print("✅ Gzip compression enabled")
+except ImportError:
+    print("⚠ flask-compress not installed, running without gzip")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -77,6 +92,36 @@ def _dbg(location, msg, data=None, hid="H1"):
     except Exception:
         pass
 # #endregion
+
+
+# Cache headers for static files and images (browser caching)
+@app.after_request
+def add_cache_headers(response):
+    """Add cache headers to speed up page loads."""
+    content_type = response.content_type or ''
+
+    # Images (previews, mockups) - cache for 1 hour
+    if content_type.startswith('image/'):
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+
+    # HTML - no cache (always fresh)
+    elif content_type.startswith('text/html'):
+        response.headers['Cache-Control'] = 'no-cache, must-revalidate'
+
+    # JSON API responses - no cache
+    elif content_type.startswith('application/json'):
+        response.headers['Cache-Control'] = 'no-store'
+
+    # SVG files - cache for 1 hour
+    elif 'svg' in content_type:
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+
+    # ZIP downloads - no cache
+    elif 'zip' in content_type or 'octet-stream' in content_type:
+        response.headers['Cache-Control'] = 'no-store'
+
+    return response
+
 
 # Progress tracking for batch operations (with automatic cleanup)
 progress_tracker = ProgressTracker(max_entries=100, expire_minutes=30)

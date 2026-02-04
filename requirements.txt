@@ -1,4 +1,5 @@
 Flask==3.0.0
+flask-compress>=1.14
 Werkzeug==3.0.1
 svglib==1.5.1
 reportlab==4.0.7
