@@ -4448,7 +4448,7 @@
                 } catch (e) {
                     // Ignore polling errors
                 }
-            }, 400);
+            }, 1000);
             
             try {
                 const response = await fetch('/api/generate-labels-combined', {
@@ -4514,7 +4514,7 @@
                 const item = document.createElement('div');
                 item.style.cssText = 'cursor: pointer; background: #fff; border: 1px solid #e9e9e7; border-radius: 3px; padding: 8px; transition: transform 0.1s, box-shadow 0.1s;';
                 item.innerHTML = `
-                    <img src="${label.preview_url}" alt="${label.product_name}" style="width: 100%; height: auto; border-radius: 2px;">
+                    <img loading="lazy" src="${label.preview_url}" alt="${label.product_name}" style="width: 100%; height: auto; border-radius: 2px;">
                     <div style="margin-top: 8px; font-size: 13px; font-weight: 500; color: #37352f;">${label.product_name}</div>
                     <div style="font-size: 11px; color: #787774;">${label.sku}</div>
                 `;
@@ -5059,7 +5059,7 @@
                 });
             }
             
-            // Also run periodically to catch any missed changes
+            // Safety net - run periodically to catch any missed changes (MutationObserver handles most)
             setInterval(function() {
                 const allInputs = document.querySelectorAll('#productsTableBody input[type="text"].editable-cell');
                 allInputs.forEach(input => {
@@ -5070,7 +5070,7 @@
                         input.style.setProperty('-webkit-text-fill-color', '#37352f', 'important');
                     }
                 });
-            }, 100);
+            }, 2000);
         }
         
         // Setup color enforcer when page loads
@@ -7599,7 +7599,7 @@
                 } catch (e) {
                     // Ignore polling errors
                 }
-            }, 400);
+            }, 1000);
 
             try {
                 // Send request (returns immediately with job_id)
@@ -7719,7 +7719,7 @@
                 const item = document.createElement('div');
                 item.style.cssText = 'cursor: pointer; background: #fff; border: 1px solid #e9e9e7; border-radius: 3px; padding: 8px; transition: transform 0.1s, box-shadow 0.1s;';
                 item.innerHTML = `
-                    <img src="${label.preview_url}" alt="${label.product_name}" style="width: 100%; height: auto; border-radius: 2px;">
+                    <img loading="lazy" src="${label.preview_url}" alt="${label.product_name}" style="width: 100%; height: auto; border-radius: 2px;">
                     <div style="margin-top: 8px; font-size: 13px; font-weight: 500; color: #37352f;">${label.product_name}</div>
                     <div style="font-size: 11px; color: #787774;">${label.sku}</div>
                 `;
@@ -7821,7 +7821,7 @@
                 } catch (e) {
                     // Ignore polling errors
                 }
-            }, 500);
+            }, 1000);
 
             try {
                 // Send request (returns immediately with job_id)
@@ -7918,7 +7918,7 @@
                 const item = document.createElement('div');
                 item.style.cssText = 'cursor: pointer; transition: transform 0.1s, box-shadow 0.1s;';
                 item.innerHTML = `
-                    <img src="${mockup.url}" alt="${mockup.name}" style="width: 100%; height: auto; border: 1px solid #e9e9e7; border-radius: 3px;">
+                    <img loading="lazy" src="${mockup.url}" alt="${mockup.name}" style="width: 100%; height: auto; border: 1px solid #e9e9e7; border-radius: 3px;">
                     <div style="margin-top: 8px; font-size: 12px; color: #787774; text-align: center;">${mockup.name}</div>
                 `;
                 item.addEventListener('click', () => {

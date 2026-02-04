@@ -49,10 +49,15 @@ class TextFormatter:
     # Maximum lines to try
     MAX_LINES = 6
 
+    # Shared draw context for text measurement (avoids creating 42,000 temp images)
+    _measure_img = None
+    _measure_draw = None
+
     def __init__(self):
         self.font_cache = {}
         self._pil_font_cache = {}
         self._font_path_cache = {}  # Cache: font_family → resolved file path
+        self._text_width_cache = {}  # Cache: (text, font_family, font_size) → width
 
     def _map_font_name(self, font_family: str) -> List[str]:
         """Map common font names to their actual filenames across different font packages.
@@ -250,6 +255,11 @@ class TextFormatter:
         if not text:
             return 0.0
 
+        # Check cache first
+        cache_key = (text, font_family, int(font_size))
+        if cache_key in self._text_width_cache:
+            return self._text_width_cache[cache_key]
+
         try:
             font = self._get_pil_font(font_family, font_size)
 
@@ -257,15 +267,16 @@ class TextFormatter:
                 # Fallback estimate
                 return len(text) * font_size * 0.55
 
-            # Create a temporary image to measure text
-            img = Image.new('RGB', (2000, 200), color='white')
-            draw = ImageDraw.Draw(img)
+            # Reuse shared draw context (avoids creating temp images)
+            if TextFormatter._measure_img is None:
+                TextFormatter._measure_img = Image.new('RGB', (2000, 500), color='white')
+                TextFormatter._measure_draw = ImageDraw.Draw(TextFormatter._measure_img)
 
-            # Measure text
-            bbox = draw.textbbox((0, 0), text, font=font)
-            width = bbox[2] - bbox[0]
+            bbox = TextFormatter._measure_draw.textbbox((0, 0), text, font=font)
+            width = float(bbox[2] - bbox[0])
 
-            return float(width)
+            self._text_width_cache[cache_key] = width
+            return width
 
         except Exception as e:
             logger.warning(f"Error measuring text width: {e}, using estimate")
@@ -279,14 +290,17 @@ class TextFormatter:
             if font is None:
                 return font_size * 1.2
 
-            img = Image.new('RGB', (1000, 500), color='white')
-            draw = ImageDraw.Draw(img)
-            bbox = draw.textbbox((0, 0), text or "Ay", font=font)
+            # Reuse shared draw context
+            if TextFormatter._measure_img is None:
+                TextFormatter._measure_img = Image.new('RGB', (2000, 500), color='white')
+                TextFormatter._measure_draw = ImageDraw.Draw(TextFormatter._measure_img)
+
+            bbox = TextFormatter._measure_draw.textbbox((0, 0), text or "Ay", font=font)
             height = bbox[3] - bbox[1]
             return float(height)
         except Exception as e:
             # Fallback: approximate line height as 1.2x font size
-            print(f"Warning: Could not measure line height: {e}")
+            logger.warning(f"Could not measure line height: {e}")
             return font_size * 1.2
 
     def extract_font_size(self, style: str) -> float:

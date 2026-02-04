@@ -135,39 +135,40 @@ class TTLDict:
         self._max_age = max_age_seconds
         self._max_entries = max_entries
         self._lock = threading.Lock()
+        self._last_cleanup = datetime.now()
+        self._cleanup_interval = 300  # Cleanup every 5 minutes (not per-access)
 
     def __setitem__(self, key, value):
         with self._lock:
-            self._cleanup()
+            self._maybe_cleanup()
             self._data[key] = value
             self._timestamps[key] = datetime.now()
 
     def __getitem__(self, key):
         with self._lock:
-            self._cleanup()
             return self._data.get(key)
 
     def get(self, key, default=None):
         with self._lock:
-            self._cleanup()
             return self._data.get(key, default)
 
     def __contains__(self, key):
         """Support 'in' operator: if key in dict"""
         with self._lock:
-            self._cleanup()
             return key in self._data
 
     def pop(self, key, default=None):
         """Remove and return value for key."""
         with self._lock:
-            self._cleanup()
             self._timestamps.pop(key, None)
             return self._data.pop(key, default)
 
-    def _cleanup(self):
-        """Remove expired entries and enforce max_entries limit."""
+    def _maybe_cleanup(self):
+        """Run cleanup only if enough time has passed (every 5 minutes)."""
         now = datetime.now()
+        if (now - self._last_cleanup).total_seconds() < self._cleanup_interval:
+            return
+        self._last_cleanup = now
         # Remove expired
         expired = [k for k, ts in self._timestamps.items()
                    if (now - ts).total_seconds() > self._max_age]
@@ -181,6 +182,39 @@ class TTLDict:
             self._timestamps.pop(oldest_key, None)
 
 background_results = TTLDict(max_age_seconds=3600, max_entries=50)  # 1 hour TTL, max 50 entries
+
+# In-memory cache for database products (avoid re-parsing CSV on every tab switch)
+_db_cache = {'path': None, 'products': None, 'mtime': None}
+_db_cache_lock = threading.Lock()
+
+def _get_cached_products(csv_path):
+    """Get products from cache or parse CSV (cached by file mtime)."""
+    with _db_cache_lock:
+        path_str = str(csv_path)
+        try:
+            current_mtime = csv_path.stat().st_mtime
+        except OSError:
+            current_mtime = None
+
+        if (_db_cache['path'] == path_str and
+                _db_cache['mtime'] == current_mtime and
+                _db_cache['products'] is not None):
+            return _db_cache['products']
+
+        # Cache miss - parse CSV
+        manager = CSVManager(csv_path)
+        products = manager.read_all()
+        _db_cache['path'] = path_str
+        _db_cache['products'] = products
+        _db_cache['mtime'] = current_mtime
+        return products
+
+def _invalidate_db_cache():
+    """Invalidate database cache (call after any DB modification)."""
+    with _db_cache_lock:
+        _db_cache['path'] = None
+        _db_cache['products'] = None
+        _db_cache['mtime'] = None
 
 def run_in_background(func):
     """Decorator to run function in background thread"""
@@ -1573,10 +1607,9 @@ def list_databases():
             # Get file info
             stat = csv_file.stat()
             
-            # Count products in file
+            # Count products in file (uses cache for active database)
             try:
-                manager = CSVManager(csv_file)
-                products = manager.read_all()
+                products = _get_cached_products(csv_file)
                 product_count = len(products)
             except Exception as e:
                 # If CSV is invalid, set count to 0
@@ -1623,6 +1656,7 @@ def select_database():
             return jsonify({'error': f'Database not found: {db_path}'}), 404
         
         if set_current_database(db_path):
+            _invalidate_db_cache()
             logger.info(f"Database selected: {db_path}")
             return jsonify({
                 'success': True,
@@ -1848,7 +1882,8 @@ def upload_database():
             return jsonify({'error': f'Invalid CSV file: {str(e)}'}), 400
         
         logger.info(f"Database uploaded: {db_path} ({product_count} products)")
-        
+        _invalidate_db_cache()
+
         return jsonify({
             'success': True,
             'filename': filename,
@@ -1877,11 +1912,12 @@ def delete_database(filename):
 
         try:
             db_path.unlink()
+            _invalidate_db_cache()
             logger.info(f"Database deleted: {db_path}")
         except Exception as e:
             logger.error(f"Failed to delete database: {e}")
             return jsonify({'error': f'Failed to delete database: {str(e)}'}), 500
-        
+
         return jsonify({
             'success': True,
             'message': f'Database deleted: {filename}'
@@ -1973,8 +2009,7 @@ def get_products():
             logger.error(f"CSV file not found: {csv_path}")
             return jsonify({'error': f'CSV file not found: {csv_path}'}), 404
         
-        manager = CSVManager(csv_path)
-        products = manager.read_all()
+        products = _get_cached_products(csv_path)
         logger.info(f"Loaded {len(products)} products from CSV")
         return jsonify({'products': products, 'database': csv_path.stem})
     except CSVManagerError as e:
@@ -2030,6 +2065,7 @@ def add_product():
         csv_path = Path(get_current_database())
         manager = CSVManager(csv_path)
         product = manager.add_product(request.json)
+        _invalidate_db_cache()
         return jsonify({'product': product, 'message': 'Product added successfully'})
     except CSVManagerError as e:
         return jsonify({'error': str(e)}), 500
@@ -2042,6 +2078,7 @@ def update_product(product_id):
         csv_path = Path(get_current_database())
         manager = CSVManager(csv_path)
         product = manager.update_product(product_id, request.json)
+        _invalidate_db_cache()
         return jsonify({'product': product, 'message': 'Product updated successfully'})
     except CSVManagerError as e:
         return jsonify({'error': str(e)}), 500
@@ -2054,6 +2091,7 @@ def delete_product(product_id):
         csv_path = Path(get_current_database())
         manager = CSVManager(csv_path)
         manager.delete_product(product_id)
+        _invalidate_db_cache()
         return jsonify({'message': 'Product deleted successfully'})
     except CSVManagerError as e:
         return jsonify({'error': str(e)}), 500

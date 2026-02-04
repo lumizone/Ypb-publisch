@@ -24,19 +24,20 @@ class ProgressTracker:
         self.max_entries = max_entries
         self.expire_minutes = expire_minutes
         self.lock = threading.Lock()
-    
+        self._last_cleanup = datetime.now()
+        self._cleanup_interval = 300  # Cleanup every 5 minutes (not per-access)
+
     def set(self, job_id, data):
         """Set progress for a job."""
         with self.lock:
-            self._cleanup()
+            self._maybe_cleanup()
             self.progress[job_id] = data
             self.timestamps[job_id] = datetime.now()
             logger.debug(f"Progress updated for {job_id}: {data.get('current', 0)}/{data.get('total', 0)}")
-    
+
     def get(self, job_id, default=None):
         """Get progress for a job."""
         with self.lock:
-            self._cleanup()
             return self.progress.get(job_id, default)
     
     def delete(self, job_id):
@@ -48,10 +49,13 @@ class ProgressTracker:
                 del self.timestamps[job_id]
             logger.debug(f"Progress deleted for {job_id}")
     
-    def _cleanup(self):
-        """Clean up expired and excess entries."""
+    def _maybe_cleanup(self):
+        """Clean up expired and excess entries (only every 5 minutes)."""
         now = datetime.now()
-        
+        if (now - self._last_cleanup).total_seconds() < self._cleanup_interval:
+            return
+        self._last_cleanup = now
+
         # Remove expired entries
         expired = [
             jid for jid, ts in self.timestamps.items()
@@ -61,7 +65,7 @@ class ProgressTracker:
             del self.progress[jid]
             del self.timestamps[jid]
             logger.info(f"Cleaned up expired progress for job {jid}")
-        
+
         # Remove oldest entries if too many
         while len(self.progress) > self.max_entries:
             jid = next(iter(self.progress))
