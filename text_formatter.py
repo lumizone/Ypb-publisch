@@ -52,6 +52,7 @@ class TextFormatter:
     def __init__(self):
         self.font_cache = {}
         self._pil_font_cache = {}
+        self._font_path_cache = {}  # Cache: font_family → resolved file path
 
     def _map_font_name(self, font_family: str) -> List[str]:
         """Map common font names to their actual filenames across different font packages.
@@ -139,9 +140,6 @@ class TextFormatter:
 
         font = None
 
-        # Get list of possible font filenames (handles "Arial Bold" → "arialbd.ttf" mapping)
-        font_candidates = self._map_font_name(font_family)
-
         # Font directories to search (priority order)
         font_directories = [
             # Microsoft Core Fonts (BEST - exact match!)
@@ -160,16 +158,33 @@ class TextFormatter:
             "C:/Windows/Fonts",
         ]
 
+        # FAST PATH: Use cached font path if we already resolved this font family
+        font_family_lower = font_family.lower().strip()
+        if font_family_lower in self._font_path_cache:
+            cached_path = self._font_path_cache[font_family_lower]
+            try:
+                font = ImageFont.truetype(cached_path, int(font_size))
+                self._pil_font_cache[font_key] = font
+                return font
+            except (OSError, IOError):
+                # Cached path no longer valid, clear and re-resolve
+                del self._font_path_cache[font_family_lower]
+
+        # SLOW PATH: First time - resolve font path by scanning directories
+        # Get list of possible font filenames (handles "Arial Bold" → "arialbd.ttf" mapping)
+        font_candidates = self._map_font_name(font_family)
+
         # Try all combinations: directory × font_candidate
         for font_filename in font_candidates:
             for directory in font_directories:
                 path = f"{directory}/{font_filename}"
                 try:
                     font = ImageFont.truetype(path, int(font_size))
-                    logger.info(f"✓ Loaded font: {font_filename} from {directory}")
+                    # CACHE the resolved path for future calls (different sizes)
+                    self._font_path_cache[font_family_lower] = path
+                    logger.info(f"✓ Resolved font: '{font_family}' → {font_filename} from {directory}")
                     break
                 except (OSError, IOError):
-                    # Font file not found or unreadable, try next
                     continue
             if font:
                 break
@@ -199,10 +214,11 @@ class TextFormatter:
                     fallback_path = f"{directory}/{fallback_name}"
                     try:
                         font = ImageFont.truetype(fallback_path, int(font_size))
-                        logger.warning(f"⚠ Using fallback font: {fallback_name} (requested: {font_family})")
+                        # Cache fallback path too
+                        self._font_path_cache[font_family_lower] = fallback_path
+                        logger.warning(f"⚠ Resolved fallback: '{font_family}' → {fallback_name} (from {directory})")
                         break
                     except (OSError, IOError):
-                        # Fallback font not found, try next
                         continue
                 if font:
                     break
