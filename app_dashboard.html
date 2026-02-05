@@ -1236,12 +1236,43 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title"><span class="step-badge">4</span> Product Data</div>
-                        <div class="card-description">Product data will be taken from the Database tab</div>
+                        <div class="card-description">Select products for label generation</div>
                     </div>
-                    <div class="form-group">
-                        <div style="margin-top: 12px;">
-                            <label for="productLimitCombined" style="font-size: 14px; color: #37352f;">Limit products (optional):</label>
-                            <input type="number" id="productLimitCombined" name="productLimit" min="1" placeholder="Leave empty for all products" style="margin-top: 4px; padding: 8px 12px; border: 1px solid #e9e9e7; border-radius: 3px; font-size: 14px; width: 200px;">
+
+                    <!-- Database indicator -->
+                    <div class="current-database-info" id="combinedGenDbInfo" style="margin: 12px 0; padding: 12px; background: #f7f6f3; border-left: 3px solid #2383e2; font-size: 13px; color: #37352f; display: none;">
+                        <strong>Database:</strong> <span id="combinedGenDbName">-</span>
+                        <span id="combinedGenProductCount" style="margin-left: 12px; color: #787774;">(0 products)</span>
+                    </div>
+
+                    <!-- Mode selector -->
+                    <div class="form-group" style="margin-top: 12px;">
+                        <label style="font-size: 14px; color: #37352f; margin-bottom: 8px; display: block;">
+                            Product Selection:
+                        </label>
+
+                        <!-- Radio buttons -->
+                        <div style="display: flex; gap: 16px; margin-bottom: 12px;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="radio" name="productSelectionMode" value="all" checked
+                                       onchange="toggleProductSelectionMode('all')"
+                                       style="margin-right: 6px;">
+                                <span style="font-size: 14px;">Generate All Products</span>
+                            </label>
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="radio" name="productSelectionMode" value="specific"
+                                       onchange="toggleProductSelectionMode('specific')"
+                                       style="margin-right: 6px;">
+                                <span style="font-size: 14px;">Select Specific Products</span>
+                            </label>
+                        </div>
+
+                        <!-- Select button (shown only when "specific" is selected) -->
+                        <div id="selectProductsBtnContainer" style="display: none;">
+                            <button type="button" class="btn btn-primary" onclick="openProductSelectionModal()"
+                                    style="width: auto; padding: 8px 16px;">
+                                Select Products (<span id="selectedProductsCount">0</span> selected)
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1334,7 +1365,7 @@
             <!-- Template Card -->
             <div class="card">
                 <div class="card-header">
-                    <div class="card-title">Label Template</div>
+                    <div class="card-title"><span class="step-badge">1</span> Label Template</div>
                     <div class="card-description">Upload your SVG label template</div>
                 </div>
                 <div class="form-group">
@@ -1410,7 +1441,7 @@
             <!-- Template Preview -->
             <div class="card" id="templatePreviewCard" style="display: none;">
                 <div class="card-header">
-                    <div class="card-title">Template Preview</div>
+                    <div class="card-title"><span class="step-badge">2</span> Template Preview</div>
                     <div class="card-description">Set text areas and alignment (LEFT/CENTER/RIGHT) for Product Name and Ingredients</div>
                 </div>
                 <div class="form-group">
@@ -1425,6 +1456,32 @@
                             Clear All Areas
                         </button>
                     </div>
+
+                    <!-- Text Alignment Selection -->
+                    <div style="margin-top: 16px; padding: 12px; background: #f8f8f7; border-radius: 3px; border: 1px solid #e9e9e7;">
+                        <div style="font-size: 13px; font-weight: 600; color: #37352f; margin-bottom: 12px;">Text Alignment</div>
+
+                        <!-- Product Name Alignment -->
+                        <div style="margin-bottom: 12px;">
+                            <label style="font-size: 12px; color: #787774; display: block; margin-bottom: 4px;">Product Name:</label>
+                            <div class="btn-group">
+                                <button type="button" class="btn-align-gen" data-field="product_name" data-align="left" onclick="setTextAlignmentGenerate('product_name', 'left')" style="padding: 6px 16px; background: #2196F3; color: white; border: none; border-radius: 3px 0 0 3px; cursor: pointer; font-size: 12px;">LEFT</button>
+                                <button type="button" class="btn-align-gen" data-field="product_name" data-align="center" onclick="setTextAlignmentGenerate('product_name', 'center')" style="padding: 6px 16px; background: #e9e9e7; color: #37352f; border: none; cursor: pointer; font-size: 12px;">CENTER</button>
+                                <button type="button" class="btn-align-gen" data-field="product_name" data-align="right" onclick="setTextAlignmentGenerate('product_name', 'right')" style="padding: 6px 16px; background: #e9e9e7; color: #37352f; border: none; border-radius: 0 3px 3px 0; cursor: pointer; font-size: 12px;">RIGHT</button>
+                            </div>
+                        </div>
+
+                        <!-- Ingredients Alignment -->
+                        <div>
+                            <label style="font-size: 12px; color: #787774; display: block; margin-bottom: 4px;">Ingredients:</label>
+                            <div class="btn-group">
+                                <button type="button" class="btn-align-gen" data-field="ingredients" data-align="left" onclick="setTextAlignmentGenerate('ingredients', 'left')" style="padding: 6px 16px; background: #2196F3; color: white; border: none; border-radius: 3px 0 0 3px; cursor: pointer; font-size: 12px;">LEFT</button>
+                                <button type="button" class="btn-align-gen" data-field="ingredients" data-align="center" onclick="setTextAlignmentGenerate('ingredients', 'center')" style="padding: 6px 16px; background: #e9e9e7; color: #37352f; border: none; cursor: pointer; font-size: 12px;">CENTER</button>
+                                <button type="button" class="btn-align-gen" data-field="ingredients" data-align="right" onclick="setTextAlignmentGenerate('ingredients', 'right')" style="padding: 6px 16px; background: #e9e9e7; color: #37352f; border: none; border-radius: 0 3px 3px 0; cursor: pointer; font-size: 12px;">RIGHT</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <div id="templatePreview" style="max-width: 100%; border: 1px solid #e9e9e7; border-radius: 3px; padding: 16px; background: #ffffff; position: relative; overflow: auto; min-height: 600px;">
                         <div id="svgContainer" style="position: relative; display: inline-block; min-width: 100%;">
                             <div id="templatePreviewText" style="color: #787774; text-align: center; padding: 20px;">
@@ -1442,7 +1499,7 @@
             <!-- Product Data Info -->
             <div class="card">
                 <div class="card-header">
-                    <div class="card-title">Product Data</div>
+                    <div class="card-title"><span class="step-badge">3</span> Product Data</div>
                     <div class="card-description">Product data will be taken from the currently selected database</div>
                 </div>
                 <div class="current-database-info" style="margin-top: 12px; padding: 12px; background: #f7f6f3; border-left: 3px solid #2383e2; font-size: 14px; color: #37352f; display: none;">
@@ -1456,7 +1513,7 @@
                     <div class="card-title">Generated Labels</div>
                     <div class="card-description">Preview of generated labels</div>
                 </div>
-                <div id="generatedLabelsPreviewStandalone" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; padding: 16px;">
+                <div id="generatedLabelsPreviewStandalone" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; padding: 16px;">
                 </div>
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e9e9e7;">
                     <a id="downloadZipLinkStandalone" href="#" class="btn btn-primary" style="text-decoration: none; display: inline-flex;">
@@ -1465,20 +1522,22 @@
                 </div>
             </div>
             
-            <!-- Generate Button -->
-            <button type="submit" class="btn btn-primary" id="submitBtn">
-                Generate Labels
-            </button>
-            
-            <!-- Status -->
-            <div id="status" class="status"></div>
-            
-            <!-- Progress -->
-            <div id="progress" class="progress">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
+            <!-- Generate Labels Card -->
+            <div class="card" style="background: #f0f7ff; border: 1px solid #4285f4;">
+                <div class="card-header">
+                    <div class="card-title"><span class="step-badge">4</span> Generate Labels</div>
+                    <div class="card-description">Generate labels with product data from database</div>
                 </div>
-                <div class="progress-text" id="progressText"></div>
+                <button type="submit" class="btn btn-primary" id="submitBtn">
+                    Generate Labels
+                </button>
+                <div id="status" class="status" style="margin-top: 8px;"></div>
+                <div id="progress" class="progress" style="display: none; margin-top: 8px;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText"></div>
+                </div>
             </div>
         </form>
         </div>
@@ -1601,7 +1660,7 @@
                 <!-- Upload Vial -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">1. Upload Vial</div>
+                        <div class="card-title"><span class="step-badge">1</span> Upload Vial</div>
                         <div class="card-description">Upload the vial image</div>
                     </div>
                     <div class="form-group">
@@ -1617,13 +1676,13 @@
                 <!-- Upload Label -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">2. Upload Label & Select Area</div>
+                        <div class="card-title"><span class="step-badge">2</span> Upload Label & Select Area</div>
                         <div class="card-description">Upload label and select the area to use on mockup</div>
                     </div>
                     <div class="form-group">
                         <label for="labelUploadSingle">Label File</label>
-                        <input type="file" id="labelUploadSingle" name="label" accept="image/*,.svg,.SVG,.png,.PNG,.jpg,.JPG,.jpeg,.JPEG" onchange="previewLabelSingle(this)">
-                        <div class="file-info">PNG, JPG, SVG, or other image formats</div>
+                        <input type="file" id="labelUploadSingle" name="label" accept="image/*,.svg,.SVG,.png,.PNG,.jpg,.JPG,.jpeg,.JPEG,.ai,.AI" onchange="previewLabelSingle(this)">
+                        <div class="file-info">PNG, JPG, SVG, AI, or other image formats</div>
                     </div>
                     <div id="labelPreviewSingle" style="margin-top: 16px; display: none;">
                         <div style="position: relative; display: inline-block; border: 1px solid #e9e9e7; border-radius: 3px; padding: 8px; background: #ffffff;">
@@ -1655,58 +1714,40 @@
                     <input type="hidden" id="labelCropDataSingle" name="labelCropData">
                 </div>
                 
-                <!-- Product Information -->
-                <div class="card">
+                <!-- Product Data (auto-detected from label) -->
+                <div class="card" id="productDataCardSingle" style="display: none;">
                     <div class="card-header">
-                        <div class="card-title">3. Product Information</div>
-                        <div class="card-description">Enter SKU and fetch product data from database</div>
+                        <div class="card-title"><span class="step-badge">3</span> Product Data</div>
+                        <div class="card-description">Automatically detected from uploaded label</div>
                     </div>
-                    <div class="form-group">
-                        <label for="skuSingle">SKU</label>
-                        <div style="display: flex; gap: 8px;">
-                            <input type="text" id="skuSingle" name="sku" placeholder="e.g., YPB.200" style="flex: 1; padding: 8px 12px; border: 1px solid #e9e9e7; border-radius: 3px; font-size: 14px; color: #37352f !important; background-color: #ffffff !important; background: #ffffff !important; -webkit-text-fill-color: #37352f !important;">
-                            <button type="button" id="fetchProductBtnSingle" class="btn btn-primary" style="width: auto; padding: 8px 20px;">
-                                Fetch Data
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- Fetched Product Data Display -->
-                    <div id="productDataDisplaySingle" style="display: none; margin-top: 16px; padding: 16px; background: #f7f6f3; border-radius: 3px; border: 1px solid #e9e9e7;">
-                        <div style="font-size: 14px; font-weight: 600; color: #37352f; margin-bottom: 12px;">Fetched Data:</div>
-                        <div class="form-group" style="margin-bottom: 12px;">
-                            <label style="font-size: 12px; color: #787774;">Product Name:</label>
-                            <div id="fetchedProductNameSingle" style="padding: 8px 12px; background: #ffffff; border: 1px solid #e9e9e7; border-radius: 3px; font-size: 14px; color: #37352f; margin-top: 4px;"></div>
-                        </div>
-                        <div class="form-group" style="margin-bottom: 12px;">
-                            <label style="font-size: 12px; color: #787774;">Ingredients:</label>
-                            <div id="fetchedIngredientsSingle" style="padding: 8px 12px; background: #ffffff; border: 1px solid #e9e9e7; border-radius: 3px; font-size: 14px; color: #37352f; margin-top: 4px;"></div>
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-size: 12px; color: #787774;">SKU:</label>
-                            <div id="fetchedSkuSingle" style="padding: 8px 12px; background: #ffffff; border: 1px solid #e9e9e7; border-radius: 3px; font-size: 14px; color: #37352f; margin-top: 4px;"></div>
-                        </div>
+                    <div id="productDataDisplaySingle" style="padding: 12px; background: #f7f6f3; border-left: 3px solid #2383e2; border-radius: 3px;">
+                        <div style="margin-bottom: 8px;"><strong>SKU:</strong> <span id="detectedSkuSingle">-</span></div>
+                        <div style="margin-bottom: 8px;"><strong>Product:</strong> <span id="detectedProductNameSingle">-</span></div>
+                        <div><strong>Ingredients:</strong> <span id="detectedIngredientsSingle">-</span></div>
                     </div>
                 </div>
+                <!-- Hidden SKU field for form submission -->
+                <input type="hidden" id="skuSingle" name="sku" value="">
                 
-                <!-- Generate Button -->
-                <button type="submit" class="btn btn-primary" id="submitMockupBtn">
-                    Generate Mockup
-                </button>
-                
-                <div style="margin-top: 8px; font-size: 12px; color: #787774;">
-                    ✓ Auto-verification: if product name/SKU/ingredients are wrong, mockup is auto-regenerated (max 3 attempts)
-                </div>
-                
-                <!-- Status -->
-                <div id="mockupStatus" class="status"></div>
-                
-                <!-- Progress -->
-                <div id="mockupProgress" class="progress">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="mockupProgressFill"></div>
+                <!-- Generate Mockup Card -->
+                <div class="card" style="background: #f0fff4; border: 1px solid #34a853;">
+                    <div class="card-header">
+                        <div class="card-title"><span class="step-badge step-green">4</span> Generate Mockup</div>
+                        <div class="card-description">Generate mockup with label applied to vial</div>
                     </div>
-                    <div class="progress-text" id="mockupProgressText"></div>
+                    <button type="submit" class="btn btn-primary" id="submitMockupBtn" style="background: #34a853;">
+                        Generate Mockup
+                    </button>
+                    <div style="margin-top: 8px; font-size: 12px; color: #787774;">
+                        Auto-verification: if product name/SKU/ingredients are wrong, mockup is auto-regenerated (max 3 attempts)
+                    </div>
+                    <div id="mockupStatus" class="status" style="margin-top: 8px;"></div>
+                    <div id="mockupProgress" class="progress" style="display: none; margin-top: 8px;">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="mockupProgressFill"></div>
+                        </div>
+                        <div class="progress-text" id="mockupProgressText"></div>
+                    </div>
                 </div>
                 
                 <!-- Result Preview -->
@@ -2689,6 +2730,12 @@
             product_name: 'left',
             ingredients: 'left'
         };
+
+        // Product selection state for Combined Generator
+        let selectedProductIdsCombined = new Set();
+        let allProductsCombined = [];
+        let productSelectionMode = 'all'; // 'all' or 'specific'
+
         let currentDrawingModeCombined = null;
         let isDraggingCombined = false;
         let isResizingCombined = false;
@@ -2769,7 +2816,15 @@
                     
                     // Update database info display
                     updateDatabaseInfo(path);
-                    
+
+                    // Load products for Combined Generator when database changes
+                    if (document.getElementById('combinedGenDbInfo')) {
+                        loadProductsForSelection();
+                        // Clear previous selection when database changes
+                        selectedProductIdsCombined.clear();
+                        document.getElementById('selectedProductsCount').textContent = '0';
+                    }
+
                     // Reload products if on database page
                     if (window.productsLoaded) {
                         window.productsLoaded = false;
@@ -3689,6 +3744,10 @@
             product_name: null,
             ingredients: null
         };
+        let textAlignmentsGenerate = {
+            product_name: 'left',
+            ingredients: 'left'
+        };
         let currentDrawingMode = null;
         let isDragging = false;
         let isResizing = false;
@@ -4462,7 +4521,8 @@
                 formData.append('template', templateFile);
             }
             formData.append('textAreas', JSON.stringify(textAreas));
-            
+            formData.append('textAlignments', JSON.stringify(textAlignmentsGenerate));
+
             const submitBtn = document.getElementById('submitBtn');
             const progress = document.getElementById('progress');
             const progressFill = document.getElementById('progressFill');
@@ -4503,6 +4563,15 @@
                     else if (progressData.status === 'completed') {
                         clearInterval(progressInterval);
                         // Fetch results from background task
+                        if (!standaloneJobId) {
+                            console.error('[Label Generator] standaloneJobId is null when trying to fetch results');
+                            showNotification('Error: Job ID not available', 'error');
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = submitBtn.dataset.originalText || 'Generate Labels';
+                            progressFill.classList.remove('active');
+                            setTimeout(() => { progress.style.display = 'none'; }, 1500);
+                            return;
+                        }
                         try {
                             const resultResponse = await fetch(`/api/generation-results/${standaloneJobId}`);
                             const resultData = await resultResponse.json();
@@ -5296,16 +5365,73 @@
                     };
                     
                     previewImg.src = dataUrl;
-                    
+
+                    // Auto-detect SKU from filename
+                    autoDetectProductData(file);
+
                 } catch (error) {
                     console.error('Error processing label file:', error);
                     showNotification('Error processing file: ' + error.message, 'error');
                 }
             } else {
                 preview.style.display = 'none';
+                // Hide product data card when no file
+                const productCard = document.getElementById('productDataCardSingle');
+                if (productCard) productCard.style.display = 'none';
+                fetchedProductDataSingle = null;
             }
         }
-        
+
+        // Auto-detect SKU from label filename and fetch product data
+        async function autoDetectProductData(file) {
+            const filename = file.name;
+            console.log('[AutoDetect] Trying to detect SKU from filename:', filename);
+
+            // Try to extract SKU from filename: YPB.100, YPB-100, YPB100, etc.
+            const skuMatch = filename.match(/YPB[.\-_]?\d+/i);
+            if (!skuMatch) {
+                console.log('[AutoDetect] No SKU pattern found in filename');
+                return;
+            }
+
+            // Normalize SKU format to YPB.XXX
+            let sku = skuMatch[0].toUpperCase();
+            sku = sku.replace(/YPB[.\-_]?/, 'YPB.');
+            console.log('[AutoDetect] Detected SKU:', sku);
+
+            try {
+                const response = await fetch(`/api/database/products/search?sku=${encodeURIComponent(sku)}`);
+                const data = await response.json();
+
+                if (response.ok && data.product) {
+                    fetchedProductDataSingle = {
+                        productName: data.product.Product || '',
+                        ingredients: data.product.Ingredients || '',
+                        sku: data.product.SKU || sku
+                    };
+
+                    // Update hidden SKU field
+                    document.getElementById('skuSingle').value = fetchedProductDataSingle.sku;
+
+                    // Update product data display
+                    document.getElementById('detectedSkuSingle').textContent = fetchedProductDataSingle.sku;
+                    document.getElementById('detectedProductNameSingle').textContent = fetchedProductDataSingle.productName;
+                    document.getElementById('detectedIngredientsSingle').textContent = fetchedProductDataSingle.ingredients;
+
+                    // Show the card
+                    document.getElementById('productDataCardSingle').style.display = 'block';
+                    showNotification(`Product data detected: ${fetchedProductDataSingle.sku}`, 'success');
+                } else {
+                    console.log('[AutoDetect] Product not found for SKU:', sku);
+                    fetchedProductDataSingle = null;
+                    document.getElementById('productDataCardSingle').style.display = 'none';
+                }
+            } catch (error) {
+                console.error('[AutoDetect] Error fetching product data:', error);
+                fetchedProductDataSingle = null;
+            }
+        }
+
         function setupDefaultLabelSelectionSingle() {
             const rect = document.getElementById('labelCropRectSingle');
             const overlay = document.getElementById('labelCropOverlaySingle');
@@ -5510,71 +5636,49 @@
             setupDefaultLabelSelectionSingle();
         }
         
-        // Fetch product data
-        document.getElementById('fetchProductBtnSingle').addEventListener('click', async function() {
-            const sku = document.getElementById('skuSingle').value.trim();
-            
-            if (!sku) {
-                showNotification('Please enter SKU', 'error');
-                return;
-            }
-            
-            try {
-                const response = await fetch(`/api/database/products/search?sku=${encodeURIComponent(sku)}`);
-                const data = await response.json();
-                
-                if (response.ok && data.product) {
-                    fetchedProductDataSingle = {
-                        productName: data.product.Product || '',
-                        ingredients: data.product.Ingredients || '',
-                        sku: data.product.SKU || sku
-                    };
-                    
-                    document.getElementById('fetchedProductNameSingle').textContent = fetchedProductDataSingle.productName;
-                    document.getElementById('fetchedIngredientsSingle').textContent = fetchedProductDataSingle.ingredients;
-                    document.getElementById('fetchedSkuSingle').textContent = fetchedProductDataSingle.sku;
-                    document.getElementById('productDataDisplaySingle').style.display = 'block';
-                    
-                    showNotification('✓ Product data fetched', 'success');
-                } else {
-                    showNotification(data.error || 'Product not found', 'error');
-                    fetchedProductDataSingle = null;
-                }
-            } catch (error) {
-                console.error('Error fetching product:', error);
-                showNotification('Error fetching product data', 'error');
-                fetchedProductDataSingle = null;
-            }
-        });
-        
         // Submit form
         document.getElementById('mockupForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            
+
             const vialFile = document.getElementById('vialUploadSingle').files[0];
             const labelFile = document.getElementById('labelUploadSingle').files[0];
-            const sku = document.getElementById('skuSingle').value.trim();
-            
+
             if (!vialFile) {
                 showNotification('Please upload vial image', 'error');
                 return;
             }
-            
+
             if (!labelFile) {
                 showNotification('Please upload label image', 'error');
                 return;
             }
-            
-            if (!sku) {
-                showNotification('Please enter SKU', 'error');
-                return;
-            }
-            
+
+            // If product data wasn't auto-detected, try extracting SKU from filename as fallback
             if (!fetchedProductDataSingle) {
-                showNotification('Please fetch product data first', 'error');
+                const skuMatch = labelFile.name.match(/YPB[.\-_]?\d+/i);
+                if (skuMatch) {
+                    let sku = skuMatch[0].toUpperCase().replace(/YPB[.\-_]?/, 'YPB.');
+                    try {
+                        const resp = await fetch(`/api/database/products/search?sku=${encodeURIComponent(sku)}`);
+                        const data = await resp.json();
+                        if (resp.ok && data.product) {
+                            fetchedProductDataSingle = {
+                                productName: data.product.Product || '',
+                                ingredients: data.product.Ingredients || '',
+                                sku: data.product.SKU || sku
+                            };
+                        }
+                    } catch (err) {
+                        console.error('Fallback SKU fetch failed:', err);
+                    }
+                }
+            }
+
+            if (!fetchedProductDataSingle) {
+                showNotification('Could not detect product data from label filename. Please use a label with a recognizable SKU (e.g., YPB.200)', 'error');
                 return;
             }
-            
+
             const formData = new FormData();
             formData.append('vial', vialFile);
             formData.append('label', labelFile);
@@ -5692,580 +5796,6 @@
             }
         }
         
-        // Label selection state (similar to text areas in Generate Labels)
-        let labelSelectionArea = null;
-        let labelImageDisplaySize = { width: 0, height: 0 };
-        let labelImageOriginalSize = { width: 0, height: 0 };
-        let labelSelectionDragging = false;
-        let labelSelectionResizing = false;
-        let labelSelectionResizeHandle = null;
-        let labelSelectionDragStart = { x: 0, y: 0 };
-        let labelSelectionRectStart = { x: 0, y: 0, width: 0, height: 0 };
-        
-        // Preview label with selection rectangle
-        async function previewLabelWithSelection(input) {
-            const preview = document.getElementById('labelPreview');
-            const previewImg = document.getElementById('labelPreviewImg');
-            const overlay = document.getElementById('labelCropOverlay');
-            
-            if (!preview || !previewImg || !overlay) {
-                console.error('Preview elements not found');
-                return;
-            }
-            
-            if (input.files && input.files[0]) {
-                const file = input.files[0];
-                const isSVG = file.name.toLowerCase().endsWith('.svg') || file.type === 'image/svg+xml';
-                
-                try {
-                    let dataUrl;
-                    
-                    if (isSVG) {
-                        // Convert SVG to PNG first
-                        console.log('Converting SVG to PNG...');
-                        const formData = new FormData();
-                        formData.append('file', file);
-                        
-                        const response = await fetch('/api/convert-svg-to-png', {
-                            method: 'POST',
-                            body: formData
-                        });
-                        
-                        if (!response.ok) {
-                            const error = await response.json();
-                            throw new Error(error.error || 'Failed to convert SVG');
-                        }
-                        
-                        const result = await response.json();
-                        dataUrl = result.png_data;
-                        
-                        // Update file input to store reference to original SVG (for backend)
-                        // Backend will handle SVG conversion
-                        console.log('SVG converted to PNG successfully');
-                    } else {
-                        // For regular images, read directly
-                        dataUrl = await new Promise((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onload = () => resolve(reader.result);
-                            reader.onerror = reject;
-                            reader.readAsDataURL(file);
-                        });
-                    }
-                    
-                    // Display image and setup selection
-                    previewImg.onerror = function(error) {
-                        console.error('Image load error:', error);
-                        showNotification('Error loading image', 'error');
-                    };
-                    
-                    previewImg.onload = function() {
-                        getImageDimensions(previewImg, false, dataUrl);
-                    };
-                    
-                    previewImg.src = dataUrl;
-                    
-                    // Try to extract SKU from uploaded file
-                    extractSkuFromFile(file);
-                    
-                } catch (error) {
-                    console.error('Error processing label file:', error);
-                    showNotification('Error processing file: ' + error.message, 'error');
-                }
-            } else {
-                preview.style.display = 'none';
-            }
-        }
-        
-        function getImageDimensions(img, isSVG, dataUrl, svgWidth, svgHeight) {
-            const overlay = document.getElementById('labelCropOverlay');
-            const preview = document.getElementById('labelPreview');
-            
-            let width, height;
-            
-            if (isSVG) {
-                // Use provided SVG dimensions or try to get from image
-                if (svgWidth && svgHeight) {
-                    width = svgWidth;
-                    height = svgHeight;
-                } else {
-                    // Fallback: try to get from image element
-                    width = img.naturalWidth || img.clientWidth || img.width || 800;
-                    height = img.naturalHeight || img.clientHeight || img.height || 600;
-                    
-                    // If still 0, use defaults
-                    if (!width || !height || width === 0 || height === 0) {
-                        width = 800;
-                        height = 600;
-                    }
-                }
-            } else {
-                width = img.naturalWidth || img.width;
-                height = img.naturalHeight || img.height;
-            }
-            
-            setupLabelSelection(width, height, overlay, preview);
-        }
-        
-        function setupLabelSelection(originalWidth, originalHeight, overlay, preview) {
-            // Store original image size
-            labelImageOriginalSize = {
-                width: originalWidth,
-                height: originalHeight
-            };
-            
-            // Calculate display size
-            const maxWidth = 800;
-            const scale = Math.min(maxWidth / labelImageOriginalSize.width, 1);
-            labelImageDisplaySize = {
-                width: labelImageOriginalSize.width * scale,
-                height: labelImageOriginalSize.height * scale
-            };
-            
-            // Set SVG overlay size to match display
-            overlay.setAttribute('width', labelImageDisplaySize.width);
-            overlay.setAttribute('height', labelImageDisplaySize.height);
-            overlay.style.display = 'block';
-            
-            // Set default selection to a square from left side (100% of the smaller dimension)
-            const minDimension = Math.min(labelImageOriginalSize.width, labelImageOriginalSize.height);
-            const squareSize = minDimension; // 100% of smaller dimension
-            const yPosition = labelImageOriginalSize.height > labelImageOriginalSize.width 
-                ? Math.floor((labelImageOriginalSize.height - squareSize) / 2) // Center vertically if image is taller
-                : 0; // Top if image is wider
-            
-            const defaultSelection = {
-                x: 0, // Always from left
-                y: yPosition,
-                width: squareSize,
-                height: squareSize
-            };
-            labelSelectionArea = defaultSelection;
-            
-            // Update selection rectangle
-            updateLabelSelectionRect();
-            
-            // Save crop data
-            saveLabelSelectionData();
-            
-            preview.style.display = 'block';
-            
-            // Setup drag and resize handlers
-            setupLabelSelectionHandlers();
-        }
-        
-        function updateLabelSelectionRect() {
-            if (!labelSelectionArea || !labelImageDisplaySize.width) return;
-            
-            const rect = document.getElementById('labelCropRect');
-            const overlay = document.getElementById('labelCropOverlay');
-            
-            // Convert original coordinates to display coordinates
-            const scaleX = labelImageDisplaySize.width / labelImageOriginalSize.width;
-            const scaleY = labelImageDisplaySize.height / labelImageOriginalSize.height;
-            
-            const displayX = labelSelectionArea.x * scaleX;
-            const displayY = labelSelectionArea.y * scaleY;
-            const displayW = labelSelectionArea.width * scaleX;
-            const displayH = labelSelectionArea.height * scaleY;
-            
-            // Update rectangle
-            rect.setAttribute('x', displayX);
-            rect.setAttribute('y', displayY);
-            rect.setAttribute('width', displayW);
-            rect.setAttribute('height', displayH);
-            
-            // Update resize handles
-            updateLabelSelectionHandles(displayX, displayY, displayW, displayH);
-        }
-        
-        function updateLabelSelectionHandles(x, y, w, h) {
-            document.getElementById('labelHandleTL').setAttribute('cx', x);
-            document.getElementById('labelHandleTL').setAttribute('cy', y);
-            document.getElementById('labelHandleTL').style.display = 'block';
-            
-            document.getElementById('labelHandleTR').setAttribute('cx', x + w);
-            document.getElementById('labelHandleTR').setAttribute('cy', y);
-            document.getElementById('labelHandleTR').style.display = 'block';
-            
-            document.getElementById('labelHandleBL').setAttribute('cx', x);
-            document.getElementById('labelHandleBL').setAttribute('cy', y + h);
-            document.getElementById('labelHandleBL').style.display = 'block';
-            
-            document.getElementById('labelHandleBR').setAttribute('cx', x + w);
-            document.getElementById('labelHandleBR').setAttribute('cy', y + h);
-            document.getElementById('labelHandleBR').style.display = 'block';
-        }
-        
-        function setupLabelSelectionHandlers() {
-            const rect = document.getElementById('labelCropRect');
-            const overlay = document.getElementById('labelCropOverlay');
-            
-            if (!rect || !overlay) return;
-            
-            // Make overlay interactive
-            overlay.style.pointerEvents = 'all';
-            
-            // Remove old listeners by cloning
-            const newRect = rect.cloneNode(true);
-            rect.parentNode.replaceChild(newRect, rect);
-            const newOverlay = overlay.cloneNode(true);
-            overlay.parentNode.replaceChild(newOverlay, overlay);
-            
-            const rectEl = document.getElementById('labelCropRect');
-            const overlayEl = document.getElementById('labelCropOverlay');
-            
-            // Drag rectangle
-            rectEl.addEventListener('mousedown', startLabelSelectionDrag);
-            
-            // Resize handles
-            ['labelHandleTL', 'labelHandleTR', 'labelHandleBL', 'labelHandleBR'].forEach((handleId, index) => {
-                const handle = document.getElementById(handleId);
-                if (handle) {
-                    handle.addEventListener('mousedown', (e) => {
-                        e.stopPropagation();
-                        startLabelSelectionResize(e, index);
-                    });
-                }
-            });
-        }
-        
-        function startLabelSelectionDrag(e) {
-            e.stopPropagation();
-            labelSelectionDragging = true;
-            
-            const overlay = document.getElementById('labelCropOverlay');
-            const overlayRect = overlay.getBoundingClientRect();
-            const imgRect = document.getElementById('labelPreviewImg').getBoundingClientRect();
-            
-            // Calculate scale between display and original
-            const scaleX = labelImageOriginalSize.width / labelImageDisplaySize.width;
-            const scaleY = labelImageOriginalSize.height / labelImageDisplaySize.height;
-            
-            // Get mouse position relative to image (accounting for padding)
-            const imgLeft = imgRect.left;
-            const imgTop = imgRect.top;
-            
-            labelSelectionDragStart = {
-                x: (e.clientX - imgLeft) * scaleX,
-                y: (e.clientY - imgTop) * scaleY
-            };
-            
-            labelSelectionRectStart = { ...labelSelectionArea };
-            
-            overlay.addEventListener('mousemove', dragLabelSelectionRect);
-            overlay.addEventListener('mouseup', endLabelSelectionDrag);
-        }
-        
-        function dragLabelSelectionRect(e) {
-            if (!labelSelectionDragging) return;
-            
-            const overlay = document.getElementById('labelCropOverlay');
-            const imgRect = document.getElementById('labelPreviewImg').getBoundingClientRect();
-            
-            // Calculate scale between display and original
-            const scaleX = labelImageOriginalSize.width / labelImageDisplaySize.width;
-            const scaleY = labelImageOriginalSize.height / labelImageDisplaySize.height;
-            
-            // Get mouse position relative to image (accounting for padding)
-            const imgLeft = imgRect.left;
-            const imgTop = imgRect.top;
-            
-            const currentX = (e.clientX - imgLeft) * scaleX;
-            const currentY = (e.clientY - imgTop) * scaleY;
-            
-            const deltaX = currentX - labelSelectionDragStart.x;
-            const deltaY = currentY - labelSelectionDragStart.y;
-            
-            labelSelectionArea = {
-                x: Math.max(0, Math.min(labelImageOriginalSize.width - labelSelectionRectStart.width, labelSelectionRectStart.x + deltaX)),
-                y: Math.max(0, Math.min(labelImageOriginalSize.height - labelSelectionRectStart.height, labelSelectionRectStart.y + deltaY)),
-                width: labelSelectionRectStart.width,
-                height: labelSelectionRectStart.height
-            };
-            
-            updateLabelSelectionRect();
-            saveLabelSelectionData();
-        }
-        
-        function endLabelSelectionDrag() {
-            labelSelectionDragging = false;
-            const overlay = document.getElementById('labelCropOverlay');
-            overlay.removeEventListener('mousemove', dragLabelSelectionRect);
-            overlay.removeEventListener('mouseup', endLabelSelectionDrag);
-        }
-        
-        function startLabelSelectionResize(e, handleIndex) {
-            labelSelectionResizing = true;
-            labelSelectionResizeHandle = handleIndex;
-            
-            const overlay = document.getElementById('labelCropOverlay');
-            const imgRect = document.getElementById('labelPreviewImg').getBoundingClientRect();
-            
-            // Calculate scale between display and original
-            const scaleX = labelImageOriginalSize.width / labelImageDisplaySize.width;
-            const scaleY = labelImageOriginalSize.height / labelImageDisplaySize.height;
-            
-            // Get mouse position relative to image
-            const imgLeft = imgRect.left;
-            const imgTop = imgRect.top;
-            
-            labelSelectionDragStart = {
-                x: (e.clientX - imgLeft) * scaleX,
-                y: (e.clientY - imgTop) * scaleY
-            };
-            
-            labelSelectionRectStart = { ...labelSelectionArea };
-            
-            overlay.addEventListener('mousemove', resizeLabelSelectionRect);
-            overlay.addEventListener('mouseup', endLabelSelectionResize);
-        }
-        
-        function resizeLabelSelectionRect(e) {
-            if (!labelSelectionResizing) return;
-            
-            const overlay = document.getElementById('labelCropOverlay');
-            const imgRect = document.getElementById('labelPreviewImg').getBoundingClientRect();
-            
-            // Calculate scale between display and original
-            const scaleX = labelImageOriginalSize.width / labelImageDisplaySize.width;
-            const scaleY = labelImageOriginalSize.height / labelImageDisplaySize.height;
-            
-            // Get mouse position relative to image
-            const imgLeft = imgRect.left;
-            const imgTop = imgRect.top;
-            
-            const currentX = (e.clientX - imgLeft) * scaleX;
-            const currentY = (e.clientY - imgTop) * scaleY;
-            
-            const deltaX = currentX - labelSelectionDragStart.x;
-            const deltaY = currentY - labelSelectionDragStart.y;
-            
-            let newSelection = { ...labelSelectionRectStart };
-            
-            // Handle different corners
-            if (labelSelectionResizeHandle === 0) { // TL
-                newSelection.x = Math.max(0, labelSelectionRectStart.x + deltaX);
-                newSelection.y = Math.max(0, labelSelectionRectStart.y + deltaY);
-                newSelection.width = labelSelectionRectStart.width - deltaX;
-                newSelection.height = labelSelectionRectStart.height - deltaY;
-            } else if (labelSelectionResizeHandle === 1) { // TR
-                newSelection.y = Math.max(0, labelSelectionRectStart.y + deltaY);
-                newSelection.width = labelSelectionRectStart.width + deltaX;
-                newSelection.height = labelSelectionRectStart.height - deltaY;
-            } else if (labelSelectionResizeHandle === 2) { // BL
-                newSelection.x = Math.max(0, labelSelectionRectStart.x + deltaX);
-                newSelection.width = labelSelectionRectStart.width - deltaX;
-                newSelection.height = labelSelectionRectStart.height + deltaY;
-            } else if (labelSelectionResizeHandle === 3) { // BR
-                newSelection.width = labelSelectionRectStart.width + deltaX;
-                newSelection.height = labelSelectionRectStart.height + deltaY;
-            }
-            
-            // Ensure minimum size and within bounds
-            newSelection.width = Math.max(10, Math.min(labelImageOriginalSize.width - newSelection.x, newSelection.width));
-            newSelection.height = Math.max(10, Math.min(labelImageOriginalSize.height - newSelection.y, newSelection.height));
-            newSelection.x = Math.max(0, Math.min(labelImageOriginalSize.width - newSelection.width, newSelection.x));
-            newSelection.y = Math.max(0, Math.min(labelImageOriginalSize.height - newSelection.height, newSelection.y));
-            
-            labelSelectionArea = newSelection;
-            updateLabelSelectionRect();
-            saveLabelSelectionData();
-        }
-        
-        function endLabelSelectionResize() {
-            labelSelectionResizing = false;
-            labelSelectionResizeHandle = null;
-            const overlay = document.getElementById('labelCropOverlay');
-            overlay.removeEventListener('mousemove', resizeLabelSelectionRect);
-            overlay.removeEventListener('mouseup', endLabelSelectionResize);
-        }
-        
-        function saveLabelSelectionData() {
-            const cropDataInput = document.getElementById('labelCropData');
-            if (cropDataInput && labelSelectionArea) {
-                cropDataInput.value = JSON.stringify(labelSelectionArea);
-            }
-        }
-        
-        function resetLabelCrop() {
-            if (!labelImageOriginalSize.width || !labelImageOriginalSize.height) return;
-            
-            // Reset to square from left side (100% of the smaller dimension)
-            const minDimension = Math.min(labelImageOriginalSize.width, labelImageOriginalSize.height);
-            const squareSize = minDimension; // 100% of smaller dimension
-            const yPosition = labelImageOriginalSize.height > labelImageOriginalSize.width 
-                ? Math.floor((labelImageOriginalSize.height - squareSize) / 2) // Center vertically if image is taller
-                : 0; // Top if image is wider
-            
-            labelSelectionArea = {
-                x: 0, // Always from left
-                y: yPosition,
-                width: squareSize,
-                height: squareSize
-            };
-            
-            updateLabelSelectionRect();
-            saveLabelSelectionData();
-        }
-        
-        // Store fetched product data
-        let fetchedProductData = null;
-        
-        // Extract SKU from uploaded file and auto-fetch product data
-        async function extractSkuFromFile(file) {
-            try {
-                const formData = new FormData();
-                formData.append('file', file);
-                
-                const response = await fetch('/api/extract-sku', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-                    console.warn('Failed to extract SKU from file:', errorData.error || 'Unknown error');
-                    return;
-                }
-                
-                const result = await response.json();
-                console.log('SKU extraction result:', result);
-                
-                if (result.success && result.sku) {
-                    // Auto-fill SKU field
-                    const skuInput = document.getElementById('sku');
-                    if (skuInput) {
-                        skuInput.value = result.sku;
-                        console.log('Auto-detected SKU:', result.sku);
-                        
-                        // Automatically fetch product data
-                        await fetchProductData(result.sku);
-                    }
-                } else {
-                    console.log('No SKU found in file, user can enter manually');
-                }
-            } catch (error) {
-                console.warn('Error extracting SKU from file:', error);
-                // Silently fail - user can still enter SKU manually
-            }
-        }
-        
-        // Fetch product data function (extracted for reuse)
-        async function fetchProductData(skuValue) {
-            const productDataDisplay = document.getElementById('productDataDisplay');
-            const fetchBtn = document.getElementById('fetchProductBtn');
-            
-            if (!skuValue) {
-                showNotification('Please enter a SKU', 'warning');
-                return;
-            }
-            
-            fetchBtn.disabled = true;
-            fetchBtn.textContent = 'Pobieranie...';
-            
-            try {
-                const response = await fetch('/api/database/products');
-                const data = await response.json();
-                
-                if (response.ok && data.products) {
-                    const product = data.products.find(p => p.SKU && p.SKU.toLowerCase() === skuValue.toLowerCase());
-                    
-                    if (product) {
-                        fetchedProductData = {
-                            productName: product.Product || '',
-                            dosage: product.Ingredients || '10 mg',
-                            sku: product.SKU || skuValue
-                        };
-                        
-                        document.getElementById('fetchedProductName').textContent = fetchedProductData.productName;
-                        document.getElementById('fetchedDosage').textContent = fetchedProductData.dosage;
-                        document.getElementById('fetchedSku').textContent = fetchedProductData.sku;
-                        productDataDisplay.style.display = 'block';
-                    } else {
-                        showNotification('Product not found for SKU: ' + skuValue, 'error');
-                        productDataDisplay.style.display = 'none';
-                    }
-                } else {
-                    throw new Error(data.error || 'Failed to fetch products');
-                }
-            } catch (error) {
-                showNotification('Error fetching data: ' + error.message, 'error');
-                productDataDisplay.style.display = 'none';
-            } finally {
-                fetchBtn.disabled = false;
-                fetchBtn.textContent = 'Pobierz dane';
-            }
-        }
-        
-        // Fetch product data from database when button is clicked
-        const fetchProductBtn = document.getElementById('fetchProductBtn');
-        if (fetchProductBtn) {
-            fetchProductBtn.addEventListener('click', async function() {
-            const sku = document.getElementById('sku').value.trim();
-            const productDataDisplay = document.getElementById('productDataDisplay');
-            const fetchBtn = this;
-            
-            if (!sku) {
-                showNotification('Please enter a SKU', 'warning');
-                return;
-            }
-            
-            fetchBtn.disabled = true;
-            fetchBtn.textContent = 'Pobieranie...';
-            
-            try {
-                const response = await fetch('/api/database/products');
-                const data = await response.json();
-                
-                if (response.ok && data.products) {
-                    const product = data.products.find(p => p.SKU && p.SKU.toLowerCase() === sku.toLowerCase());
-                    
-                    if (product) {
-                        // Extract dosage from Ingredients (e.g., "10mg" from "10mg, ...")
-                        let dosage = '';
-                        if (product.Ingredients) {
-                            const dosageMatch = product.Ingredients.match(/(\d+\.?\d*\s*mg)/i);
-                            if (dosageMatch) {
-                                dosage = dosageMatch[1];
-                            } else {
-                                // If no dosage pattern found, use first part of Ingredients
-                                dosage = product.Ingredients.split(',')[0].trim();
-                            }
-                        }
-                        
-                        // Store fetched data
-                        fetchedProductData = {
-                            productName: product.Product || '',
-                            dosage: dosage || '',
-                            sku: product.SKU || sku
-                        };
-                        
-                        // Display fetched data
-                        document.getElementById('fetchedProductName').textContent = fetchedProductData.productName || '(brak)';
-                        document.getElementById('fetchedDosage').textContent = fetchedProductData.dosage || '(brak)';
-                        document.getElementById('fetchedSku').textContent = fetchedProductData.sku;
-                        productDataDisplay.style.display = 'block';
-                        
-                    } else {
-                        fetchedProductData = null;
-                        productDataDisplay.style.display = 'none';
-                        showNotification('Product not found for SKU: ' + sku, 'error');
-                    }
-                } else {
-                    throw new Error(data.error || 'Failed to fetch products');
-                }
-            } catch (error) {
-                console.error('Error fetching product data:', error);
-                fetchedProductData = null;
-                productDataDisplay.style.display = 'none';
-                showNotification('Error fetching data: ' + error.message, 'error');
-            } finally {
-                fetchBtn.disabled = false;
-                fetchBtn.textContent = 'Pobierz dane';
-            }
-            });
-        }
-
         // ==================== COMBINED GENERATOR FUNCTIONS ====================
         
         // Preview vial image for Combined
@@ -7055,6 +6585,25 @@
             });
         }
 
+        // Text alignment selection for Generate Labels
+        function setTextAlignmentGenerate(field, alignment) {
+            console.log(`[Alignment Generate] Setting ${field} to ${alignment}`);
+            textAlignmentsGenerate[field] = alignment;
+
+            // Update button styles for this field
+            const buttons = document.querySelectorAll(`.btn-align-gen[data-field="${field}"]`);
+            buttons.forEach(btn => {
+                const btnAlign = btn.getAttribute('data-align');
+                if (btnAlign === alignment) {
+                    btn.style.background = '#2196F3';
+                    btn.style.color = 'white';
+                } else {
+                    btn.style.background = '#e9e9e7';
+                    btn.style.color = '#37352f';
+                }
+            });
+        }
+
         // Combined Generator text areas functions (similar to Generate Labels)
         function setDrawingModeCombined(mode) {
             currentDrawingModeCombined = mode;
@@ -7474,7 +7023,184 @@
         document.getElementById('combinedForm').addEventListener('submit', function(e) {
             e.preventDefault();
         });
-        
+
+        // ===== PRODUCT SELECTION FUNCTIONS =====
+
+        function toggleProductSelectionMode(mode) {
+            productSelectionMode = mode;
+            const selectBtnContainer = document.getElementById('selectProductsBtnContainer');
+
+            if (mode === 'specific') {
+                selectBtnContainer.style.display = 'block';
+                // Auto-open modal if no products selected yet
+                if (selectedProductIdsCombined.size === 0 && allProductsCombined.length > 0) {
+                    openProductSelectionModal();
+                }
+            } else {
+                selectBtnContainer.style.display = 'none';
+            }
+        }
+
+        async function loadProductsForSelection() {
+            try {
+                const response = await fetch('/api/database/products');
+                const data = await response.json();
+
+                if (response.ok && data.products) {
+                    allProductsCombined = data.products;
+
+                    // Update database info
+                    const dbName = data.database || 'Unknown';
+                    document.getElementById('combinedGenDbName').textContent = dbName;
+                    document.getElementById('combinedGenProductCount').textContent = `(${data.products.length} products)`;
+                    document.getElementById('combinedGenDbInfo').style.display = 'block';
+
+                    return true;
+                } else {
+                    showNotification('Failed to load products', 'error');
+                    return false;
+                }
+            } catch (error) {
+                console.error('Error loading products:', error);
+                showNotification('Error loading products: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        async function openProductSelectionModal() {
+            // Load products if not already loaded
+            if (allProductsCombined.length === 0) {
+                const loaded = await loadProductsForSelection();
+                if (!loaded) return;
+            }
+
+            // Render table
+            renderProductSelectionTable();
+
+            // Show modal
+            document.getElementById('productSelectionModal').style.display = 'block';
+            document.body.style.overflow = 'hidden';
+
+            // Update counts
+            updateModalCounts();
+        }
+
+        function closeProductSelectionModal() {
+            document.getElementById('productSelectionModal').style.display = 'none';
+            document.body.style.overflow = '';
+        }
+
+        // Click outside to close
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('productSelectionModal');
+            if (event.target === modal) {
+                closeProductSelectionModal();
+            }
+        });
+
+        function renderProductSelectionTable() {
+            const tbody = document.getElementById('productSelectionTableBody');
+            tbody.innerHTML = '';
+
+            allProductsCombined.forEach((product) => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid #e9e9e7';
+
+                // Checkbox cell
+                const tdCheckbox = document.createElement('td');
+                tdCheckbox.style.padding = '12px';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'product-selection-checkbox';
+                checkbox.dataset.id = product.id;
+                checkbox.checked = selectedProductIdsCombined.has(product.id);
+                checkbox.onchange = () => toggleProductSelection(product.id);
+                tdCheckbox.appendChild(checkbox);
+
+                // Product Name cell
+                const tdProduct = document.createElement('td');
+                tdProduct.style.padding = '12px';
+                tdProduct.style.fontSize = '14px';
+                tdProduct.textContent = product.Product || '-';
+
+                // Ingredients cell
+                const tdIngredients = document.createElement('td');
+                tdIngredients.style.padding = '12px';
+                tdIngredients.style.fontSize = '13px';
+                tdIngredients.style.color = '#787774';
+                tdIngredients.textContent = product.Ingredients || '-';
+
+                // SKU cell
+                const tdSku = document.createElement('td');
+                tdSku.style.padding = '12px';
+                tdSku.style.fontSize = '13px';
+                tdSku.style.fontWeight = '600';
+                tdSku.textContent = product.SKU || '-';
+
+                tr.appendChild(tdCheckbox);
+                tr.appendChild(tdProduct);
+                tr.appendChild(tdIngredients);
+                tr.appendChild(tdSku);
+                tbody.appendChild(tr);
+            });
+        }
+
+        function toggleProductSelection(productId) {
+            if (selectedProductIdsCombined.has(productId)) {
+                selectedProductIdsCombined.delete(productId);
+            } else {
+                selectedProductIdsCombined.add(productId);
+            }
+            updateModalCounts();
+            updateSelectAllCheckbox();
+        }
+
+        function selectAllProducts() {
+            allProductsCombined.forEach(p => selectedProductIdsCombined.add(p.id));
+            renderProductSelectionTable();
+            updateModalCounts();
+            updateSelectAllCheckbox();
+        }
+
+        function unselectAllProducts() {
+            selectedProductIdsCombined.clear();
+            renderProductSelectionTable();
+            updateModalCounts();
+            updateSelectAllCheckbox();
+        }
+
+        function toggleAllProductsCheckbox(checkbox) {
+            if (checkbox.checked) {
+                selectAllProducts();
+            } else {
+                unselectAllProducts();
+            }
+        }
+
+        function updateSelectAllCheckbox() {
+            const checkbox = document.getElementById('modalSelectAllCheckbox');
+            if (checkbox) {
+                checkbox.checked = selectedProductIdsCombined.size === allProductsCombined.length && allProductsCombined.length > 0;
+                checkbox.indeterminate = selectedProductIdsCombined.size > 0 && selectedProductIdsCombined.size < allProductsCombined.length;
+            }
+        }
+
+        function updateModalCounts() {
+            document.getElementById('modalSelectedCount').textContent = selectedProductIdsCombined.size;
+            document.getElementById('modalTotalCount').textContent = allProductsCombined.length;
+        }
+
+        function confirmProductSelection() {
+            // Update counter in Step 4
+            document.getElementById('selectedProductsCount').textContent = selectedProductIdsCombined.size;
+
+            // Close modal
+            closeProductSelectionModal();
+
+            // Show confirmation
+            showNotification(`${selectedProductIdsCombined.size} products selected`, 'success');
+        }
+
         // STEP 1: Generate Labels
         async function generateLabelsCombined() {
             const status = document.getElementById('labelsStatus');
@@ -7509,9 +7235,18 @@
             formData.append('textAreas', JSON.stringify(textAreasCombined));
             formData.append('textAlignments', JSON.stringify(textAlignmentsCombined));
 
-            const limit = document.getElementById('productLimitCombined').value;
-            if (limit) {
-                formData.append('limit', limit);
+            // Product selection mode
+            if (productSelectionMode === 'specific') {
+                if (selectedProductIdsCombined.size === 0) {
+                    showNotification('Please select at least one product', 'warning');
+                    return;
+                }
+                // Send selected product IDs as JSON array
+                const selectedIds = Array.from(selectedProductIdsCombined);
+                formData.append('selectedProductIds', JSON.stringify(selectedIds));
+            } else {
+                // Generate all products (no filter)
+                formData.append('generateAll', 'true');
             }
 
             btn.disabled = true;
@@ -7549,7 +7284,12 @@
                     else if (progressData.status === 'completed') {
                         // Generation complete - fetch results
                         clearInterval(progressInterval);
-                        await fetchGenerationResults(jobId);
+                        if (jobId) {
+                            await fetchGenerationResults(jobId);
+                        } else {
+                            console.error('[Combined Generator] jobId is null when trying to fetch results');
+                            showNotification('Error: Job ID not available', 'error');
+                        }
                     }
                     else if (progressData.status === 'failed') {
                         clearInterval(progressInterval);
@@ -7785,7 +7525,12 @@
                     }
                     else if (progressData.status === 'completed') {
                         clearInterval(mockupProgressInterval);
-                        await fetchMockupGenerationResults(mockupJobId);
+                        if (mockupJobId) {
+                            await fetchMockupGenerationResults(mockupJobId);
+                        } else {
+                            console.error('[Mockup Generator] mockupJobId is null when trying to fetch results');
+                            showNotification('Error: Job ID not available', 'error');
+                        }
                     }
                     else if (progressData.status === 'failed') {
                         clearInterval(mockupProgressInterval);
@@ -8371,6 +8116,67 @@
                 <button class="import-btn" onclick="closeImportModal()">Cancel</button>
                 <button class="import-btn import-btn-primary" id="importSubmitBtn" disabled onclick="submitImport()">
                     Import Database
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Selection Modal -->
+    <div id="productSelectionModal" class="import-modal" style="display: none;">
+        <div class="import-modal-content" style="max-width: 800px;">
+            <!-- Header -->
+            <div class="import-modal-header">
+                <div class="import-modal-title">Select Products for Generation</div>
+                <button class="import-modal-close" onclick="closeProductSelectionModal()">×</button>
+            </div>
+
+            <!-- Body -->
+            <div class="import-modal-body">
+                <!-- Select All / Unselect All -->
+                <div style="margin-bottom: 16px; padding: 12px; background: #f7f6f3; border-radius: 3px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 14px; font-weight: 600; color: #37352f;">
+                        <span id="modalSelectedCount">0</span> of <span id="modalTotalCount">0</span> products selected
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="btn" onclick="selectAllProducts()"
+                                style="background: #e9e9e7; color: #37352f; padding: 6px 12px; font-size: 13px;">
+                            Select All
+                        </button>
+                        <button type="button" class="btn" onclick="unselectAllProducts()"
+                                style="background: #e9e9e7; color: #37352f; padding: 6px 12px; font-size: 13px;">
+                            Unselect All
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Products Table -->
+                <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e9e9e7; border-radius: 3px;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead style="position: sticky; top: 0; background: #f7f6f3; z-index: 1;">
+                            <tr>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e9e9e7; width: 50px;">
+                                    <input type="checkbox" id="modalSelectAllCheckbox" onchange="toggleAllProductsCheckbox(this)">
+                                </th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e9e9e7; font-weight: 600; font-size: 13px;">Product Name</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e9e9e7; font-weight: 600; font-size: 13px;">Ingredients</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e9e9e7; font-weight: 600; font-size: 13px;">SKU</th>
+                            </tr>
+                        </thead>
+                        <tbody id="productSelectionTableBody">
+                            <!-- Rows will be populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="import-modal-footer">
+                <button type="button" class="btn" onclick="closeProductSelectionModal()"
+                        style="background: #e9e9e7; color: #37352f;">
+                    Cancel
+                </button>
+                <button type="button" class="btn btn-primary" onclick="confirmProductSelection()">
+                    Confirm Selection
                 </button>
             </div>
         </div>

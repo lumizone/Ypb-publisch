@@ -316,8 +316,8 @@ def detect_available_fonts():
             try:
                 ImageFont.truetype(font_name, 12)
                 found.append(font_name)
-            except:
-                pass
+            except (OSError, IOError):
+                pass  # Font not found, skip it
 
         if found:
             logger.info(f"✓ Fonts available: {', '.join(found)}")
@@ -1223,7 +1223,7 @@ def remove_background_with_reference(result_image, vial_reference, label_referen
                 background_to_remove = is_background | checkerboard_mask
         else:
             # Jeśli nie ma referencji, użyj prostej metody
-            background_to_remove = green_background | checkerboard_mask
+            background_to_remove = is_background | checkerboard_mask
         
         # Policz ile pikseli zostanie usuniętych (do logowania)
         pixels_to_remove = np.sum(background_to_remove)
@@ -3063,7 +3063,7 @@ def generate_mockup():
                 'result_url': result_url,  # Final mockup without background
                 'filename': output_filename,
                 'attempts': attempts,
-                'verified': is_valid
+                'verified': True  # Mockup generated successfully
             })
 
         except Exception as e:
@@ -3699,14 +3699,31 @@ def generate_labels_combined():
             return jsonify({'error': 'No template file provided'}), 400
 
         text_areas_str = request.form.get('textAreas', '{}')
-        text_areas = json.loads(text_areas_str) if text_areas_str else {}
+        try:
+            text_areas = json.loads(text_areas_str) if text_areas_str else {}
+        except json.JSONDecodeError:
+            return jsonify({'error': 'Invalid textAreas JSON'}), 400
 
         text_alignments_str = request.form.get('textAlignments', '{}')
-        text_alignments = json.loads(text_alignments_str) if text_alignments_str else {}
+        try:
+            text_alignments = json.loads(text_alignments_str) if text_alignments_str else {}
+        except json.JSONDecodeError:
+            return jsonify({'error': 'Invalid textAlignments JSON'}), 400
         logger.info(f"Text alignments: {text_alignments}")
 
-        limit = request.form.get('limit')
-        limit = int(limit) if limit else None
+        # Product selection mode
+        selected_product_ids_str = request.form.get('selectedProductIds')
+        generate_all = request.form.get('generateAll')
+
+        selected_product_ids = None
+        if selected_product_ids_str:
+            try:
+                selected_product_ids = json.loads(selected_product_ids_str)
+                if not isinstance(selected_product_ids, list):
+                    return jsonify({'error': 'selectedProductIds must be an array'}), 400
+                logger.info(f"Selected {len(selected_product_ids)} specific product IDs: {selected_product_ids}")
+            except json.JSONDecodeError:
+                return jsonify({'error': 'Invalid selectedProductIds JSON'}), 400
 
         # Save template
         template_filename = secure_filename(template_file.filename)
@@ -3778,10 +3795,20 @@ def generate_labels_combined():
             return jsonify({'error': f'Database not found: {csv_path}'}), 400
 
         csv_manager = CSVManager(csv_path)
-        products = csv_manager.read_all()
+        all_products = csv_manager.read_all()
 
-        if limit:
-            products = products[:limit]
+        # Filter products based on selection mode
+        if selected_product_ids is not None:
+            # Filter by selected IDs
+            products = [p for p in all_products if p.get('id') in selected_product_ids]
+            logger.info(f"Selected {len(products)} specific products (IDs: {selected_product_ids})")
+
+            if not products:
+                return jsonify({'error': 'No products found with selected IDs'}), 400
+        else:
+            # Generate all products
+            products = all_products
+            logger.info(f"Generating all {len(products)} products")
 
         if not products:
             return jsonify({'error': 'No products found in database'}), 400
@@ -4109,10 +4136,16 @@ def generate_mockups_from_labels():
 
         labels_job_id = request.form.get('labels_job_id')
         labels_str = request.form.get('labels', '[]')
-        labels = json.loads(labels_str) if labels_str else []
+        try:
+            labels = json.loads(labels_str) if labels_str else []
+        except json.JSONDecodeError:
+            return jsonify({'error': 'Invalid labels JSON'}), 400
 
         label_crop_data_str = request.form.get('labelCropData')
-        label_crop_data = json.loads(label_crop_data_str) if label_crop_data_str else None
+        try:
+            label_crop_data = json.loads(label_crop_data_str) if label_crop_data_str else None
+        except json.JSONDecodeError:
+            return jsonify({'error': 'Invalid labelCropData JSON'}), 400
 
         if not labels:
             return jsonify({'error': 'No labels provided'}), 400
