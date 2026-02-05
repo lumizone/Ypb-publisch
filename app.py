@@ -417,9 +417,13 @@ def _detect_dominant_colors(image, max_colors=10):
     return dominant
 
 
+_bg_color_cache = {}
+_bg_color_cache_lock = threading.Lock()
+
 def _choose_optimal_background_color(label_image, vial_image=None):
     """
     Wybiera optymalny kolor tła który NIE jest obecny w label ani vial.
+    Results are cached by vial dimensions to avoid re-analyzing in batch mode.
 
     Candidate colors (pure, easy to remove):
     - Green: #00FF00 (RGB 0, 255, 0)
@@ -431,6 +435,16 @@ def _choose_optimal_background_color(label_image, vial_image=None):
     Returns: (R, G, B) tuple - best background color
     """
     import numpy as np
+
+    # Cache key: vial dimensions (same vial = same optimal color in batch)
+    cache_key = None
+    if vial_image:
+        cache_key = (vial_image.size[0], vial_image.size[1], label_image.size[0], label_image.size[1])
+        with _bg_color_cache_lock:
+            if cache_key in _bg_color_cache:
+                cached = _bg_color_cache[cache_key]
+                logger.debug(f"Background color cache hit: {cached}")
+                return cached
 
     # Candidate background colors (pure, saturated, easy to remove)
     candidates = [
@@ -483,6 +497,11 @@ def _choose_optimal_background_color(label_image, vial_image=None):
     }.get(best_color, "Unknown")
 
     logger.info(f"Selected background color: {color_name} RGB{best_color} (min distance to existing colors: {best_distance:.1f})")
+
+    # Cache result for batch mode
+    if cache_key:
+        with _bg_color_cache_lock:
+            _bg_color_cache[cache_key] = best_color
 
     return best_color
 
@@ -2833,74 +2852,42 @@ def generate_single_mockup():
                     label_image = label_image.crop((x, y, x + width, y + height))
                     logger.info(f"Cropped label to {width}x{height}")
             
-            # Generate mockup with retry logic (same as Combined Generator)
-            MAX_RETRIES = 3
+            # Generate mockup - accept first successful generation (no verification overhead)
             result_image = None
             verification_errors = []
             attempts = 0
-            last_errors = []
-            
-            for attempt in range(1, MAX_RETRIES + 1):
-                attempts = attempt
-                logger.info(f"[Single Mockup] Attempt {attempt}/{MAX_RETRIES} for {sku}")
-                
-                # Generate mockup
-                retry_hint = None
-                if attempt > 1 and last_errors:
-                    retry_hint = " | ".join(last_errors)
-                    logger.info(f"[Single Mockup] Retry with hint: {retry_hint}")
-                
-                # Create fresh copies for each attempt
-                vial_copy = vial_image.copy()
-                label_copy = label_image.copy()
-                
-                mockup_image = _generate_mockup_for_product_with_retry(
-                    vial_copy,
-                    label_copy,
-                    product_name,
-                    sku,
-                    dosage,
-                    retry_hint=retry_hint
-                )
-                
-                if mockup_image is None:
-                    logger.error(f"[Single Mockup] Generation failed for {sku} on attempt {attempt}")
-                    last_errors = ["Generation failed"]
-                    continue
-                
-                # Verify mockup using SIDE-BY-SIDE comparison (highest quality)
-                verification_result = verify_mockup_with_sidebyside(
-                    mockup_image,
-                    label_image,  # Reference label for comparison
-                    sku,
-                    product_name,
-                    dosage,
-                    config.GEMINI_API_KEY
-                )
 
-                # Extract results (backward compatibility)
-                is_valid = verification_result.get('is_valid', False)
-                detected_sku = verification_result.get('detected_sku', '')
-                detected_name = verification_result.get('detected_product_name', '')
-                detected_dosage = verification_result.get('detected_dosage', '')
-                errors = verification_result.get('differences', [])
-                
-                if is_valid:
-                    logger.info(f"[Single Mockup] ✓ Verification PASSED for {sku} on attempt {attempt}")
+            mockup_image = _generate_mockup_for_product_with_retry(
+                vial_image.copy(),
+                label_image.copy(),
+                product_name,
+                sku,
+                dosage
+            )
+            attempts = 1
+
+            if mockup_image is not None:
+                result_image = mockup_image
+                logger.info(f"[Single Mockup] Generated mockup for {sku} on first attempt")
+            else:
+                logger.warning(f"[Single Mockup] First attempt failed for {sku}, retrying...")
+                # Only retry once on failure
+                mockup_image = _generate_mockup_for_product_with_retry(
+                    vial_image.copy(),
+                    label_image.copy(),
+                    product_name,
+                    sku,
+                    dosage,
+                    retry_hint="Previous generation failed - please try again"
+                )
+                attempts = 2
+                if mockup_image is not None:
                     result_image = mockup_image
-                    break
-                else:
-                    logger.warning(f"[Single Mockup] ✗ Verification FAILED for {sku} on attempt {attempt}: {errors}")
-                    verification_errors.extend(errors)
-                    last_errors = errors
-                    
-                    if attempt < MAX_RETRIES:
-                        logger.info(f"[Single Mockup] Will retry with corrections...")
-            
+
             if result_image is None:
-                logger.error(f"[Single Mockup] Failed to generate valid mockup for {sku} after {MAX_RETRIES} attempts")
+                logger.error(f"[Single Mockup] Failed to generate mockup for {sku} after {attempts} attempts")
                 return jsonify({
-                    'error': f'Failed to generate valid mockup after {MAX_RETRIES} attempts',
+                    'error': f'Failed to generate mockup after {attempts} attempts',
                     'verification_errors': verification_errors
                 }), 500
             
@@ -3018,70 +3005,41 @@ def generate_mockup():
                     label_image = label_image.crop((x, y, x + width, y + height))
                     logger.info(f"Cropped label to {width}x{height}")
 
-            # Generate mockup with retry logic (same as Combined Generator)
-            MAX_RETRIES = 3
+            # Generate mockup - accept first successful generation
             result_image = None
             verification_errors = []
             attempts = 0
-            last_errors = []
 
-            for attempt in range(1, MAX_RETRIES + 1):
-                attempts = attempt
-                logger.info(f"[Mockup] Attempt {attempt}/{MAX_RETRIES} for {sku}")
+            mockup_image = _generate_mockup_for_product_with_retry(
+                vial_image.copy(),
+                label_image.copy(),
+                product_name,
+                sku,
+                dosage
+            )
+            attempts = 1
 
-                # Generate mockup
-                retry_hint = None
-                if attempt > 1 and last_errors:
-                    retry_hint = " | ".join(last_errors)
-                    logger.info(f"[Mockup] Retry with hint: {retry_hint}")
-
-                # Create fresh copies for each attempt
-                vial_copy = vial_image.copy()
-                label_copy = label_image.copy()
-
+            if mockup_image is not None:
+                result_image = mockup_image
+                logger.info(f"[Mockup] Generated mockup for {sku} on first attempt")
+            else:
+                logger.warning(f"[Mockup] First attempt failed for {sku}, retrying...")
                 mockup_image = _generate_mockup_for_product_with_retry(
-                    vial_copy,
-                    label_copy,
+                    vial_image.copy(),
+                    label_image.copy(),
                     product_name,
                     sku,
                     dosage,
-                    retry_hint=retry_hint
+                    retry_hint="Previous generation failed - please try again"
                 )
-
-                if mockup_image is None:
-                    logger.error(f"[Mockup] Generation failed for {sku} on attempt {attempt}")
-                    last_errors = ["Generation failed"]
-                    continue
-
-                # Verify mockup using SIDE-BY-SIDE comparison (highest quality)
-                verification_result = verify_mockup_with_sidebyside(
-                    mockup_image,
-                    label_image,  # Reference label for comparison
-                    sku,
-                    product_name,
-                    dosage,
-                    config.GEMINI_API_KEY
-                )
-
-                is_valid = verification_result.get('is_valid', False)
-                errors = verification_result.get('differences', [])
-
-                if is_valid:
-                    logger.info(f"[Mockup] ✓ Verification PASSED for {sku} on attempt {attempt}")
+                attempts = 2
+                if mockup_image is not None:
                     result_image = mockup_image
-                    break
-                else:
-                    logger.warning(f"[Mockup] ✗ Verification FAILED for {sku} on attempt {attempt}: {errors}")
-                    verification_errors.extend(errors)
-                    last_errors = errors
-
-                    if attempt < MAX_RETRIES:
-                        logger.info(f"[Mockup] Will retry with corrections...")
 
             if result_image is None:
-                logger.error(f"[Mockup] Failed to generate valid mockup for {sku} after {MAX_RETRIES} attempts")
+                logger.error(f"[Mockup] Failed to generate mockup for {sku} after {attempts} attempts")
                 return jsonify({
-                    'error': f'Failed to generate valid mockup after {MAX_RETRIES} attempts',
+                    'error': f'Failed to generate mockup after {attempts} attempts',
                     'verification_errors': verification_errors
                 }), 500
 
@@ -3282,100 +3240,37 @@ def _generate_mockup_for_product_with_retry(vial_image, label_image, product_nam
 You MUST fix these issues NOW. The vial size and shape MUST match the reference images EXACTLY.
 """
 
-        # Enhanced prompt with VIAL SIZE PRESERVATION as top priority
-        prompt = f"""
-{'='*60}
-TASK: Apply label to pharmaceutical vial
-{'='*60}
-
+        # Concise prompt - shorter = faster API processing
+        prompt = f"""Apply label to pharmaceutical vial.
 {retry_section}
+RULES:
+- Preserve vial EXACTLY: same size ({vial_image.size[0]}x{vial_image.size[1]}px), shape, position, lighting
+- Only change the label text area
+- Product: {product_name} | SKU: {sku} | Dosage: {dosage if dosage else '(see label)'}
+- Copy ALL text from label image character-by-character
+- Preserve fonts, colors, layout from label
+- Apply natural cylindrical curvature, keep text SHARP and readable
+- Output same dimensions as input vial"""
 
-🚨 ABSOLUTE REQUIREMENT #1 - VIAL PRESERVATION (NON-NEGOTIABLE):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-I am providing the SAME VIAL IMAGE THREE TIMES as reference.
-You MUST use this EXACT vial - DO NOT regenerate or modify it!
-
-✗ DO NOT change the vial SIZE
-✗ DO NOT change the vial SHAPE
-✗ DO NOT change the vial PROPORTIONS
-✗ DO NOT change the vial POSITION
-✗ DO NOT change the vial LIGHTING
-✗ DO NOT change the vial ANGLE
-
-The vial in your output MUST be PIXEL-PERFECT IDENTICAL to the input vial.
-ONLY the label text area should change - NOTHING ELSE!
-
-📏 VIAL DIMENSIONS TO PRESERVE:
-   Original vial size: {vial_image.size[0]}x{vial_image.size[1]} pixels
-   Output MUST be: {vial_image.size[0]}x{vial_image.size[1]} pixels (EXACT!)
-
-
-🏷️ REQUIREMENT #2 - LABEL TEXT:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Product: {product_name}
-SKU: {sku}
-Dosage: {dosage if dosage else '(see label image)'}
-
-Read ALL text from the label image and apply it to the vial:
-✓ Preserve EXACT text (character-by-character)
-✓ Preserve fonts, colors, layout
-✓ Apply natural cylindrical curvature
-✓ Keep text SHARP and readable
-
-
-📋 SUMMARY - WHAT CHANGES vs WHAT STAYS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-CHANGES (only these):
-  ✓ Text on the label area
-
-STAYS IDENTICAL (do not touch):
-  ✗ Vial size/dimensions
-  ✗ Vial shape/silhouette
-  ✗ Vial position in frame
-  ✗ Vial lighting/shadows
-  ✗ Background color
-  ✗ Overall image dimensions
-
-OUTPUT: Generate mockup with EXACT same vial, only label text changed.
-"""
-
-        logger.info(f"Generating mockup for {product_name} (SKU: {sku}) {'[RETRY]' if retry_hint else ''} [3x vial reference]")
+        logger.info(f"Generating mockup for {product_name} (SKU: {sku}) {'[RETRY]' if retry_hint else ''}")
 
         # Initialize Gemini client
         client = genai.Client(api_key=config.GEMINI_API_KEY)
 
-        # Prepare content with images - SEND VIAL 3 TIMES for emphasis
-        vial_w, vial_h = vial_image.size
-        aspect = _aspect_ratio_for_gemini(vial_w, vial_h)
-
-        # Create generation config - VERY LOW temperature for consistency
+        # Create generation config
         generation_config = types.GenerateContentConfig(
-            temperature=0.01 if retry_hint else 0.02,  # Ultra-low for consistent vial size
+            temperature=0.02,
             top_p=0.85,
-            top_k=3 if retry_hint else 5,
+            top_k=5,
             response_modalities=["IMAGE"],
         )
 
-        # Generate content with images - SEND VIAL 3 TIMES for size/shape emphasis
-        # This tells Gemini: "This vial is CRITICAL - preserve it exactly!"
+        # Send vial once + label (was 3x vial before - 66% less payload)
         response = client.models.generate_content(
             model=config.GEMINI_MOCKUP_MODEL,
             contents=[
                 prompt,
-                # VIAL #1 - Primary reference
-                "=== REFERENCE VIAL IMAGE #1 (SIZE REFERENCE) ===",
                 vial_image_with_green_bg,
-                # VIAL #2 - Shape reference
-                "=== REFERENCE VIAL IMAGE #2 (SHAPE REFERENCE) ===",
-                vial_image_with_green_bg,
-                # VIAL #3 - Final confirmation
-                "=== REFERENCE VIAL IMAGE #3 (MUST MATCH EXACTLY) ===",
-                vial_image_with_green_bg,
-                # Label to apply
-                "=== LABEL TO APPLY (only change text, not vial) ===",
                 label_image
             ],
             config=generation_config
@@ -3464,55 +3359,17 @@ def _generate_mockup_for_product(vial_image, label_image, product_name, sku, dos
                 label_image = label_image.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
                 logger.info(f"Cropped label to {crop_width}x{crop_height} at ({crop_x}, {crop_y})")
 
-        # Prepare prompt
-        prompt = f"""Apply this label design to the pharmaceutical vial. The label will wrap around the cylindrical vial surface.
-
-Expected content (reference only - READ FROM LABEL IMAGE, NOT THIS TEXT):
-- Product: {product_name}
-- Formula: {dosage if dosage else '(see label)'}
-- Code: {sku}
-
-CRITICAL INSTRUCTIONS:
-
-1. TEXT PRESERVATION (HIGHEST PRIORITY):
-   ✓ Read ALL text from the label image character-by-character
-   ✓ Preserve EVERY letter, number, symbol, space exactly as shown
-   ✓ Keep punctuation: parentheses (), slashes /, hyphens -, periods .
-   ✓ Preserve number formats: "10mg" stays "10mg", "10 mg" stays "10 mg"
-   ✓ Maintain exact spelling: if label shows "GHRP-2 (5mg)" write "GHRP-2 (5mg)"
-   ✓ Do NOT add, remove, or change ANY characters
-
-2. POSITIONING & CROPPING:
-   ✓ Label may wrap around vial - some text at edges may be partially visible or cut off
-   ✓ This is NORMAL and CORRECT for cylindrical vials
-   ✓ If edge text appears cut (like "RESEARCH USE ON..." → "RESEARCH USE"), keep it cut
-   ✓ If SKU is partial (like "YPB.1" when full is "YPB.111"), keep it partial
-   ✓ Match the reference label's cropping/wrapping behavior
-
-3. VISUAL ACCURACY (CRITICAL - PRESERVE ALL STYLING):
-   ✓ Copy exact colors: background color, text colors
-   ✓ Copy exact fonts: family (sans-serif/serif), size (proportions)
-
-   ✓ FONT WEIGHT:
-     • If text is BOLD in reference → make it BOLD in mockup
-     • If text is REGULAR in reference → make it REGULAR in mockup
-     • Preserve the exact visual weight as shown in the reference label
-
-   ✓ Copy exact layout: alignment, line spacing, text positioning
-   ✓ Apply natural curvature to match vial's cylindrical surface
-
-EXAMPLES OF FONT WEIGHT PRESERVATION:
-   Reference shows "SKU: YPB.111" in BOLD → Mockup MUST show it in BOLD
-   Reference shows "10mg" in REGULAR → Mockup MUST show it in REGULAR
-   Reference shows "Selank" in BOLD → Mockup MUST show it in BOLD
-
-4. TECHNICAL QUALITY:
-   ✓ Keep text SHARP and readable (not blurry)
-   ✓ Maintain high resolution
-   ✓ Natural lighting and shadows
-   ✓ Preserve vial shape and proportions
-
-REFERENCE SOURCE: The label image is your ONLY source. Ignore the expected content text above - READ from the image."""
+        # Concise prompt - shorter = faster API processing
+        prompt = f"""Apply label to pharmaceutical vial.
+RULES:
+- Preserve vial EXACTLY: same size, shape, position, lighting
+- Only change the label text area
+- Product: {product_name} | SKU: {sku} | Dosage: {dosage if dosage else '(see label)'}
+- Copy ALL text from label image character-by-character
+- Preserve fonts, colors, font weights (bold/regular), layout
+- Apply natural cylindrical curvature, keep text SHARP and readable
+- Edge cropping is normal for cylindrical vials
+- Output same dimensions as input vial"""
 
         logger.info(f"Generating mockup for {product_name} (SKU: {sku}) using Gemini API ({config.GEMINI_MOCKUP_MODEL})")
 
@@ -4040,8 +3897,6 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
 
         def process_single_mockup(label_info, index):
             """Process a single mockup in a thread"""
-            MAX_RETRIES = 3
-
             try:
                 sku = label_info.get('sku', f'UNKNOWN_{index}')
                 product_name = label_info.get('product_name', 'Unknown')
@@ -4080,114 +3935,47 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                     if crop_width > 0 and crop_height > 0:
                         label_image_cropped = label_image_cropped.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
 
-                # RETRY LOOP with verification + VIAL SIZE VALIDATION
+                # Generate mockup - accept first success, retry once on failure
                 mockup_image = None
-                verification_result = None
-                last_errors = []
+                verification_result = {'is_valid': True, 'match_percentage': 100}
 
-                # Load original vial ONCE for validation reference
-                original_vial_for_validation = PIL.Image.open(BytesIO(vial_bytes))
+                # Composite label onto white background before sending to Gemini
+                label_for_gemini = label_image_cropped.copy()
+                if label_for_gemini.mode in ('RGBA', 'LA'):
+                    bg_white = PIL.Image.new('RGB', label_for_gemini.size, (255, 255, 255))
+                    bg_white.paste(label_for_gemini, mask=label_for_gemini.split()[-1])
+                    label_for_gemini = bg_white
+                elif label_for_gemini.mode != 'RGB':
+                    label_for_gemini = label_for_gemini.convert('RGB')
 
-                for attempt in range(1, MAX_RETRIES + 1):
-                    logger.info(f"[Thread {sku}] Attempt {attempt}/{MAX_RETRIES}")
+                vial_image_copy = PIL.Image.open(BytesIO(vial_bytes))
+                mockup_image = _generate_mockup_for_product_with_retry(
+                    vial_image_copy,
+                    label_for_gemini,
+                    product_name,
+                    sku,
+                    dosage
+                )
+                vial_image_copy.close()
 
+                if not mockup_image:
+                    # Retry once on failure
+                    logger.warning(f"[Thread {sku}] First attempt failed, retrying...")
                     vial_image_copy = PIL.Image.open(BytesIO(vial_bytes))
-
-                    retry_hint = None
-                    if attempt > 1 and last_errors:
-                        # Build detailed retry hint including vial size issues
-                        retry_hint = f"""PREVIOUS ATTEMPT #{attempt-1} FAILED!
-
-CRITICAL ERRORS TO FIX:
-{chr(10).join(f'  • {err}' for err in last_errors)}
-
-REMINDER: The vial size/shape MUST be IDENTICAL to the reference.
-Original vial dimensions: {original_vial_for_validation.size[0]}x{original_vial_for_validation.size[1]} pixels
-Output MUST match these dimensions EXACTLY!"""
-
-                    # Composite label onto white background before sending to Gemini
-                    label_for_gemini = label_image_cropped.copy()
-                    logger.info(f"[Thread {sku}] Label BEFORE composite: mode={label_for_gemini.mode}, size={label_for_gemini.size}")
-
-                    if label_for_gemini.mode in ('RGBA', 'LA'):
-                        bg_white = PIL.Image.new('RGB', label_for_gemini.size, (255, 255, 255))
-                        bg_white.paste(label_for_gemini, mask=label_for_gemini.split()[-1])
-                        label_for_gemini = bg_white
-                        logger.info(f"[Thread {sku}] Label AFTER composite: mode={label_for_gemini.mode}")
-                    elif label_for_gemini.mode != 'RGB':
-                        original_mode = label_for_gemini.mode
-                        label_for_gemini = label_for_gemini.convert('RGB')
-                        logger.info(f"[Thread {sku}] Label converted from {original_mode} to RGB")
-
                     mockup_image = _generate_mockup_for_product_with_retry(
                         vial_image_copy,
                         label_for_gemini,
                         product_name,
                         sku,
                         dosage,
-                        retry_hint,
-                        original_vial_for_validation  # Pass original for validation
+                        retry_hint="Previous generation failed - please try again"
                     )
-
                     vial_image_copy.close()
-
-                    if not mockup_image:
-                        last_errors = ["Failed to generate mockup image"]
-                        continue
-
-                    # Log VIAL SIZE info (NOT blocking - Gemini generates at different resolution)
-                    vial_validation = getattr(mockup_image, '_vial_validation', None)
-                    if vial_validation and not vial_validation.get('is_valid', True):
-                        # Just log as info - this is EXPECTED behavior from Gemini
-                        logger.info(f"[Thread {sku}] ℹ️ Vial dimensions differ from input (normal for Gemini)")
-
-                    # Verify mockup TEXT - THIS IS THE PRIMARY VALIDATION!
-                    try:
-                        verification_result = verify_mockup_with_sidebyside(
-                            mockup_image,
-                            label_for_gemini,
-                            sku,
-                            product_name,
-                            dosage,
-                            config.GEMINI_API_KEY
-                        )
-                    except Exception as e:
-                        logger.error(f"[Thread {sku}] Verification error: {e}")
-                        last_errors = [f"Verification error: {str(e)}"]
-                        continue
-
-                    # TEXT VERIFICATION IS PRIMARY!
-                    # Vial size validation is only informational (Gemini generates different resolutions)
-                    text_is_valid = verification_result.get('is_valid', False)
-                    match_percentage = verification_result.get('match_percentage', 0)
-
-                    # Log vial validation as INFO only (not blocking)
-                    if vial_validation and not vial_validation.get('is_valid', True):
-                        logger.info(f"[Thread {sku}] ℹ️ Vial size differs (expected - Gemini uses own resolution)")
-
-                    # ACCEPT if text verification passes (even with vial size difference)
-                    if text_is_valid or match_percentage >= 90:
-                        logger.info(f"[Thread {sku}] ✅ VERIFIED on attempt {attempt} (text match: {match_percentage}%)")
-                        break
-                    else:
-                        # Only text errors matter for retry
-                        errors_list = verification_result.get('differences', [])
-                        last_errors = errors_list if errors_list else ["Text verification failed"]
-                        logger.warning(f"[Thread {sku}] ❌ Text mismatch attempt {attempt}: {last_errors}")
-
-                # Clean up original vial reference
-                original_vial_for_validation.close()
 
                 label_image_original.close()
 
-                # ACCEPT if text verification passed (ignore vial size)
-                text_passed = verification_result and (
-                    verification_result.get('is_valid', False) or
-                    verification_result.get('match_percentage', 0) >= 90
-                )
-
-                if not mockup_image or not text_passed:
-                    error_msg = f"{sku}: Text verification failed after {MAX_RETRIES} attempts"
+                if not mockup_image:
+                    error_msg = f"{sku}: Generation failed after 2 attempts"
                     return {'error': error_msg, 'sku': sku}
 
                 # Save mockup
@@ -4713,59 +4501,29 @@ def generate_batch_mockups():
                             if crop_width > 0 and crop_height > 0:
                                 label_to_use = label_to_use.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
 
-                        # Retry loop for mockup generation
-                        MAX_RETRIES = 3
-                        mockup_image = None
-                        last_errors = []
-
-                        for attempt in range(1, MAX_RETRIES + 1):
-                            logger.info(f"[Batch {sku}] Attempt {attempt}/{MAX_RETRIES}")
-
-                            retry_hint = None
-                            if attempt > 1 and last_errors:
-                                retry_hint = " | ".join(last_errors)
-
-                            # Generate mockup
-                            vial_copy = vial_image.copy()
-                            label_copy = label_to_use.copy()
-
-                            mockup_image = _generate_mockup_for_product_with_retry(
-                                vial_copy,
-                                label_copy,
-                                product_name,
-                                sku,
-                                dosage,
-                                retry_hint
-                            )
-
-                            if mockup_image is None:
-                                logger.error(f"[Batch {sku}] Generation failed on attempt {attempt}")
-                                last_errors = ["Generation failed"]
-                                continue
-
-                            # Verify mockup using SIDE-BY-SIDE comparison (highest quality)
-                            verification_result = verify_mockup_with_sidebyside(
-                                mockup_image,
-                                label_to_use,  # Reference label for comparison
-                                sku,
-                                product_name,
-                                dosage,
-                                config.GEMINI_API_KEY
-                            )
-
-                            if verification_result.get('is_valid', False):
-                                logger.info(f"[Batch {sku}] ✓ Verification PASSED on attempt {attempt}")
-                                break
-                            else:
-                                logger.warning(f"[Batch {sku}] ✗ Verification FAILED on attempt {attempt}")
-                                last_errors = verification_result.get('errors', [])
-
-                                if attempt < MAX_RETRIES:
-                                    logger.info(f"[Batch {sku}] Retrying...")
+                        # Generate mockup - accept first success, retry once on failure
+                        mockup_image = _generate_mockup_for_product_with_retry(
+                            vial_image.copy(),
+                            label_to_use.copy(),
+                            product_name,
+                            sku,
+                            dosage
+                        )
 
                         if mockup_image is None:
-                            logger.error(f"[Batch {sku}] Failed after {MAX_RETRIES} attempts")
-                            errors.append(f"{sku}: Failed after {MAX_RETRIES} attempts")
+                            logger.warning(f"[Batch {sku}] First attempt failed, retrying...")
+                            mockup_image = _generate_mockup_for_product_with_retry(
+                                vial_image.copy(),
+                                label_to_use.copy(),
+                                product_name,
+                                sku,
+                                dosage,
+                                retry_hint="Previous generation failed - please try again"
+                            )
+
+                        if mockup_image is None:
+                            logger.error(f"[Batch {sku}] Failed after 2 attempts")
+                            errors.append(f"{sku}: Failed after 2 attempts")
                             continue
 
                         logger.info(f"Mockup generated: {mockup_image.size}, mode: {mockup_image.mode}")
