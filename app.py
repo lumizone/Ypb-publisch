@@ -3913,6 +3913,18 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
 
                 logger.info(f"[Thread] Processing mockup {index+1}/{len(labels)}: {product_name} ({sku})")
 
+                # Update progress - show which product is being generated NOW
+                with progress_lock:
+                    current = completed_count[0]
+                    progress_tracker.set(tracking_id, {
+                        'current': current,
+                        'total': len(labels),
+                        'status': 'processing',
+                        'message': f'Generating {product_name} ({sku})',
+                        'current_product': product_name,
+                        'percentage': int((current / len(labels)) * 100)
+                    })
+
                 # Load label image
                 label_image_original = PIL.Image.open(label_path)
                 logger.info(f"[Thread {sku}] Label loaded from {label_path.name}: mode={label_image_original.mode}, size={label_image_original.size}")

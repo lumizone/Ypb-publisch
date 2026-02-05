@@ -7634,6 +7634,9 @@
                         btn.textContent = btn.dataset.originalText || 'Generate Labels';
                         setTimeout(() => { progress.style.display = 'none'; }, 2000);
                     }
+                    else if (progressData.status === 'unknown') {
+                        progressText.textContent = 'Preparing label generation...';
+                    }
                 } catch (e) {
                     // Ignore polling errors
                 }
@@ -7843,8 +7846,14 @@
 
                     if (progressData.status === 'processing') {
                         const pct = progressData.percentage || 0;
+                        const current = progressData.current || 0;
+                        const total = progressData.total || 0;
                         progressFill.style.width = Math.max(pct, 5) + '%';
-                        progressText.textContent = `${progressData.message} (${progressData.current}/${progressData.total}) - ${Math.round(pct)}%`;
+                        if (current > 0) {
+                            progressText.textContent = `${progressData.message} (${current}/${total}) - ${Math.round(pct)}%`;
+                        } else {
+                            progressText.textContent = `${progressData.message || 'Preparing mockups...'} (0/${total})`;
+                        }
                     }
                     else if (progressData.status === 'completed') {
                         clearInterval(mockupProgressInterval);
@@ -7860,6 +7869,10 @@
                         btn.disabled = false;
                         btn.textContent = btn.dataset.originalText || 'Generate Mockups';
                         setTimeout(() => { progress.style.display = 'none'; }, 2000);
+                    }
+                    else if (progressData.status === 'unknown') {
+                        // Task not started yet - show waiting message
+                        progressText.textContent = 'Preparing mockup generation...';
                     }
                 } catch (e) {
                     // Ignore polling errors
