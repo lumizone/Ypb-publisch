@@ -1,6 +1,6 @@
 # YPBv2 - Label & Mockup Generator
 
-**Status**: ✅ Production Ready (4 lutego 2026)
+**Status**: ✅ Production Ready (5 lutego 2026)
 **Lokalizacja**: `/Users/lukasz/YPBv2`
 **Port**: http://localhost:8000
 **Railway**: https://ypbv2.up.railway.app (8 CPU / 8GB RAM)
@@ -8,6 +8,118 @@
 ---
 
 ## 🎯 AKTUALNY STAN APLIKACJI
+
+### ✅ Product Selection Feature (05.02.2026) 🎯
+
+**Cel**: Umożliwienie wyboru konkretnych produktów do generowania labels w Combined Generator
+
+---
+
+#### Feature: Product Selection w Combined Generator Step 4
+
+**Problem**: Brak możliwości wyboru konkretnych produktów - generowanie zawsze wszystkich lub limit liczbowy
+
+**Rozwiązanie**:
+- Database indicator z nazwą bazy i liczbą produktów
+- Radio toggle: "Generate All Products" vs "Select Specific Products"
+- Modal popup z listą produktów (Product Name, Ingredients, SKU)
+- Checkbox selection z Select All / Unselect All
+- Real-time counters: "X of Y products selected"
+- Frontend validation (wymaga min. 1 produkt)
+- Backend filtering po selected IDs
+
+**Implementacja - Frontend (app_dashboard.html)**:
+```javascript
+// State variables
+let selectedProductIdsCombined = new Set();
+let allProductsCombined = [];
+let productSelectionMode = 'all'; // 'all' or 'specific'
+
+// 11 nowych funkcji:
+- toggleProductSelectionMode(mode)
+- loadProductsForSelection()
+- openProductSelectionModal()
+- closeProductSelectionModal()
+- renderProductSelectionTable()
+- toggleProductSelection(productId)
+- selectAllProducts()
+- unselectAllProducts()
+- toggleAllProductsCheckbox(checkbox)
+- updateSelectAllCheckbox()
+- updateModalCounts()
+- confirmProductSelection()
+```
+
+**Implementacja - Backend (app.py)**:
+```python
+# Parameter parsing (~line 3714)
+selected_product_ids_str = request.form.get('selectedProductIds')
+selected_product_ids = json.loads(selected_product_ids_str)
+
+# Product filtering (~line 3796)
+if selected_product_ids is not None:
+    products = [p for p in all_products if p.get('id') in selected_product_ids]
+    logger.info(f"Selected {len(products)} specific products")
+else:
+    products = all_products
+    logger.info(f"Generating all {len(products)} products")
+```
+
+**UI Components**:
+1. **Database Indicator** (Step 4)
+   - Nazwa bazy danych
+   - Liczba produktów: "(92 products)"
+   - Auto-update przy zmianie bazy
+
+2. **Mode Selector** (Radio Buttons)
+   - Default: "Generate All Products"
+   - Alt: "Select Specific Products"
+   - Przycisk pojawia się tylko w trybie "specific"
+
+3. **Product Selection Modal** (800px width)
+   - Sticky header z tytułem i X button
+   - Licznik: "5 of 92 products selected"
+   - Select All / Unselect All buttons
+   - Scrollable table (max 400px height)
+   - Kolumny: Checkbox | Product Name | Ingredients | SKU
+   - Header checkbox: unchecked / indeterminate / checked
+   - Confirm / Cancel buttons
+
+**Features**:
+- ✅ Indeterminate checkbox state (partial selection)
+- ✅ Click outside modal to close
+- ✅ Auto-open modal when switching to "specific" mode
+- ✅ Selection cleared when database changes
+- ✅ Real-time counter update
+- ✅ Toast notification on confirm: "5 products selected"
+- ✅ Validation: shows warning if 0 products selected
+
+**Backend Filtering**:
+- Frontend wysyła: `selectedProductIds: [0, 1, 2, 3, 4]` (JSON array)
+- Backend filtruje: `products = [p for p in all if p.get('id') in selected_ids]`
+- Logger: `"Selected 5 specific products (IDs: [0, 1, 2, 3, 4])"`
+
+**Backward Compatibility**:
+- ✅ Default mode = "Generate All" (existing behavior)
+- ✅ No changes to existing API contracts
+- ✅ Graceful fallback if feature not used
+
+**Testing**:
+- ✅ Generate All (default) - all products generated
+- ✅ Select Specific + All Selected - all products generated
+- ✅ Select Specific + Partial (5 products) - only 5 generated
+- ✅ Select Specific + None - validation warning
+- ✅ Modal UX: Select All, Unselect All, header checkbox, individual checkboxes
+- ✅ Database change - clears selection, updates product list
+- ✅ Click outside / X / Cancel - closes modal
+
+**Pliki zmienione**:
+- `app_dashboard.html` (+370 lines) - UI + 11 JS functions
+- `app.py` (+20 lines) - parameter parsing + filtering logic
+
+**Commit**: `943409e` - FEATURE: Product selection in Combined Generator Step 4
+
+---
 
 ### ✅ UX Improvements (04.02.2026) 🎨
 
@@ -820,6 +932,20 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ## 📝 CHANGELOG
 
+### 5 lutego 2026
+- ✅ **FEATURE: Product Selection** - wybór konkretnych produktów w Combined Generator
+- ✅ **Database Indicator** - nazwa bazy + liczba produktów w Step 4
+- ✅ **Mode Toggle** - "Generate All" vs "Select Specific Products"
+- ✅ **Selection Modal** - lista produktów z checkboxami (800px)
+- ✅ **Select All/Unselect All** - bulk actions
+- ✅ **Indeterminate Checkbox** - partial selection state
+- ✅ **Real-time Counters** - "5 of 92 products selected"
+- ✅ **Frontend Validation** - wymaga min. 1 produkt
+- ✅ **Backend Filtering** - filtrowanie po selected IDs
+- ✅ **Auto-clear** - reset selection przy zmianie bazy
+- ✅ **Toast Notifications** - "5 products selected" confirmation
+- ✅ **Backward Compatible** - default = "Generate All"
+
 ### 4 lutego 2026
 - ✅ **UX: Toast Notifications** - 25x alert() → styled toasts z dismiss
 - ✅ **UX: Button Spinners** - "Generating..." z animacja podczas pracy
@@ -890,5 +1016,5 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ---
 
-**Last Updated**: 4 lutego 2026
-**Status**: ✅ Production Ready - Performance Optimized + Polished UX
+**Last Updated**: 5 lutego 2026
+**Status**: ✅ Production Ready - Product Selection Feature + Performance Optimized + Polished UX
