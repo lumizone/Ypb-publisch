@@ -1018,7 +1018,7 @@
             <div class="nav-item" data-page="generate">Generate Labels</div>
             <div class="nav-item" data-page="database">Database</div>
             <div class="nav-item" data-page="mockup">Mockup Generator</div>
-            <div class="nav-item" data-page="image-convertor">Image Convertor</div>
+            <div class="nav-item" data-page="image-convertor" style="display: none;">Image Convertor</div>
             <div class="nav-item" data-page="archive">Archive</div>
             <div class="nav-item" data-page="instructions">Instructions</div>
             <div class="nav-item" data-page="settings">Settings</div>
@@ -4482,15 +4482,63 @@
             const trackingJobId = 'labels_' + Date.now();
             formData.append('tracking_id', trackingJobId);
             
-            // Start polling for progress
+            let standaloneJobId = null;
+
+            // Start polling for progress (same pattern as Combined Generator)
             const progressInterval = setInterval(async () => {
                 try {
                     const progressResponse = await fetch(`/api/generation-progress/${trackingJobId}`);
                     const progressData = await progressResponse.json();
                     if (progressData.status === 'processing') {
                         const pct = progressData.percentage || 0;
+                        const current = progressData.current || 0;
+                        const total = progressData.total || 0;
                         progressFill.style.width = Math.max(pct, 5) + '%';
-                        progressText.textContent = `${progressData.message} (${progressData.current}/${progressData.total}) - ${Math.round(pct)}%`;
+                        if (current > 0) {
+                            progressText.textContent = `${progressData.message} (${current}/${total}) - ${Math.round(pct)}%`;
+                        } else {
+                            progressText.textContent = `${progressData.message || 'Preparing...'} (0/${total})`;
+                        }
+                    }
+                    else if (progressData.status === 'completed') {
+                        clearInterval(progressInterval);
+                        // Fetch results from background task
+                        try {
+                            const resultResponse = await fetch(`/api/generation-results/${standaloneJobId}`);
+                            const resultData = await resultResponse.json();
+                            if (resultResponse.ok && resultData.success && resultData.labels && resultData.labels.length > 0) {
+                                progressFill.style.width = '100%';
+                                progressFill.classList.remove('active');
+                                progressText.textContent = 'Complete!';
+                                displayGeneratedLabelsStandalone(resultData.labels, resultData.job_id, resultData.zip_file);
+                                resultsCard.style.display = 'block';
+                                setTimeout(() => { resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+                                showNotification(`Generated ${resultData.labels.length} labels`, 'success');
+                            } else {
+                                showNotification(resultData.error || 'No labels were generated', 'error');
+                                progressText.textContent = 'Error';
+                            }
+                        } catch (err) {
+                            showNotification('Error fetching results: ' + err.message, 'error');
+                            progressText.textContent = 'Error';
+                        }
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = submitBtn.dataset.originalText || 'Generate Labels';
+                        progressFill.classList.remove('active');
+                        setTimeout(() => { progress.style.display = 'none'; }, 1500);
+                    }
+                    else if (progressData.status === 'failed') {
+                        clearInterval(progressInterval);
+                        showNotification(progressData.message || 'Generation failed', 'error');
+                        progressFill.style.width = '100%';
+                        progressFill.classList.remove('active');
+                        progressText.textContent = 'Failed';
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = submitBtn.dataset.originalText || 'Generate Labels';
+                        setTimeout(() => { progress.style.display = 'none'; }, 2000);
+                    }
+                    else if (progressData.status === 'unknown') {
+                        progressText.textContent = 'Preparing label generation...';
                     }
                 } catch (e) {
                     // Ignore polling errors
@@ -4503,50 +4551,30 @@
                     body: formData
                 });
 
-                clearInterval(progressInterval);
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    console.log('Generate Labels - Success:', data);
-                    console.log('Labels count:', data.labels ? data.labels.length : 0);
-
+                    standaloneJobId = data.job_id;
+                    // Background task started - polling will handle completion
+                } else {
+                    clearInterval(progressInterval);
+                    showNotification(data.error || 'Failed to start generation', 'error');
                     progressFill.style.width = '100%';
                     progressFill.classList.remove('active');
-                    progressText.textContent = 'Complete!';
-                    
-                    // Display labels preview
-                    if (data.labels && data.labels.length > 0) {
-                        displayGeneratedLabelsStandalone(data.labels, data.job_id, data.zip_file);
-                        resultsCard.style.display = 'block';
-                        
-                        // Scroll to results
-                        setTimeout(() => {
-                            resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }, 100);
-                        
-                        showNotification(`✓ Generated ${data.labels.length} labels`, 'success');
-                    } else {
-                        console.error('No labels in response');
-                        showNotification('No labels were generated', 'error');
-                    }
-                } else {
-                    console.error('Generate Labels - Error:', data);
-                    showNotification(data.error || 'Failed to generate labels', 'error');
-                    progressFill.style.width = '100%';
                     progressText.textContent = 'Error';
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = submitBtn.dataset.originalText || 'Generate Labels';
+                    setTimeout(() => { progress.style.display = 'none'; }, 2000);
                 }
             } catch (error) {
+                clearInterval(progressInterval);
                 showNotification('Error: ' + error.message, 'error');
                 progressFill.style.width = '100%';
+                progressFill.classList.remove('active');
                 progressText.textContent = 'Error';
-            } finally {
-                clearInterval(progressInterval);
                 submitBtn.disabled = false;
                 submitBtn.textContent = submitBtn.dataset.originalText || 'Generate Labels';
-                progressFill.classList.remove('active');
-                setTimeout(() => {
-                    progress.style.display = 'none';
-                }, 1500);
+                setTimeout(() => { progress.style.display = 'none'; }, 2000);
             }
         });
 
@@ -5567,39 +5595,43 @@
             const progressText = document.getElementById('mockupProgressText');
             
             submitBtn.disabled = true;
+            submitBtn.dataset.originalText = submitBtn.textContent;
+            submitBtn.innerHTML = '<span class="btn-spinner"></span> Generating...';
             status.style.display = 'none';
             document.getElementById('mockupResultCardSingle').style.display = 'none';
             progress.style.display = 'block';
             progressFill.style.width = '10%';
+            progressFill.classList.add('active');
             progressText.textContent = 'Generating mockup with AI...';
-            
+
             try {
                 const response = await fetch('/api/generate-single-mockup', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (response.ok) {
                     progressFill.style.width = '100%';
+                    progressFill.classList.remove('active');
                     progressText.textContent = 'Complete!';
-                    
+
                     // Display result
                     const resultCard = document.getElementById('mockupResultCardSingle');
                     const resultImg = document.getElementById('mockupResultImgSingle');
                     const downloadLink = document.getElementById('downloadMockupLinkSingle');
-                    
+
                     resultImg.src = data.mockup_url;
                     downloadLink.href = data.mockup_url;
                     downloadLink.download = data.filename || 'mockup.png';
                     resultCard.style.display = 'block';
-                    
+
                     // Show verification info if available
                     if (data.verification_info) {
                         const verificationInfo = document.getElementById('verificationInfoSingle');
                         const verificationDetails = document.getElementById('verificationDetailsSingle');
-                        
+
                         let detailsHtml = '';
                         if (data.verification_info.attempts > 1) {
                             detailsHtml += `Generated after ${data.verification_info.attempts} attempts<br>`;
@@ -5607,33 +5639,38 @@
                         if (data.verification_info.errors && data.verification_info.errors.length > 0) {
                             detailsHtml += `Fixed issues: ${data.verification_info.errors.join(', ')}`;
                         }
-                        
+
                         verificationDetails.innerHTML = detailsHtml || 'Verified on first attempt';
                         verificationInfo.style.display = 'block';
                     }
-                    
+
                     status.className = 'status success';
-                    status.textContent = '✓ Mockup generated successfully!';
+                    status.textContent = 'Mockup generated successfully!';
                     status.style.display = 'block';
-                    
+                    showNotification('Mockup generated successfully!', 'success');
+
                     setTimeout(() => {
                         progress.style.display = 'none';
                     }, 2000);
-                    
+
                 } else {
                     throw new Error(data.error || 'Failed to generate mockup');
                 }
-                
+
             } catch (error) {
                 console.error('Error:', error);
-                progressFill.style.width = '0%';
-                progress.style.display = 'none';
-                
+                progressFill.style.width = '100%';
+                progressFill.classList.remove('active');
+                progressText.textContent = 'Error';
+
                 status.className = 'status error';
                 status.textContent = 'Error: ' + error.message;
                 status.style.display = 'block';
+                showNotification('Error: ' + error.message, 'error');
+                setTimeout(() => { progress.style.display = 'none'; }, 2000);
             } finally {
                 submitBtn.disabled = false;
+                submitBtn.textContent = submitBtn.dataset.originalText || 'Generate Mockup';
             }
         });
         
@@ -6229,115 +6266,6 @@
             });
         }
 
-        // Mockup Form Submit
-        document.getElementById('mockupForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const vialFile = document.getElementById('vialUpload').files[0];
-            const labelFile = document.getElementById('labelUpload').files[0];
-            const sku = document.getElementById('sku').value.trim();
-            
-            if (!vialFile || !labelFile) {
-                showNotification('Please upload both images: vial and label', 'warning');
-                return;
-            }
-            
-            if (!sku) {
-                showNotification('Please enter a SKU', 'warning');
-                return;
-            }
-            
-            if (!fetchedProductData) {
-                showNotification('Please fetch product data first using the "Get data" button', 'warning');
-                return;
-            }
-            
-            const productName = fetchedProductData.productName;
-            const dosage = fetchedProductData.dosage || '10 mg';
-            
-            const formData = new FormData();
-            formData.append('vial', vialFile);
-            formData.append('label', labelFile);
-            formData.append('productName', productName);
-            formData.append('sku', sku);
-            formData.append('dosage', dosage);
-            
-            // Add crop data if available
-            const cropDataInput = document.getElementById('labelCropData');
-            if (cropDataInput && cropDataInput.value) {
-                formData.append('labelCropData', cropDataInput.value);
-                console.log('Sending crop data:', cropDataInput.value);
-            }
-            
-            const submitBtn = document.getElementById('submitMockupBtn');
-            const status = document.getElementById('mockupStatus');
-            const progress = document.getElementById('mockupProgress');
-            const progressFill = document.getElementById('mockupProgressFill');
-            const progressText = document.getElementById('mockupProgressText');
-            const resultCard = document.getElementById('mockupResultCard');
-            
-            submitBtn.disabled = true;
-            status.style.display = 'none';
-            document.getElementById('mockupResultCard').style.display = 'none';
-            document.getElementById('finishedResultCard').style.display = 'none';
-            progress.style.display = 'block';
-            progressFill.style.width = '0%';
-            progressText.textContent = 'Sending to AI...';
-            
-            try {
-                const response = await fetch('/api/generate-mockup', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    progressFill.style.width = '100%';
-                    progressText.textContent = 'Complete!';
-                    
-                    status.className = 'status success';
-                    status.textContent = 'Mockup generated successfully!';
-                    status.style.display = 'block';
-                    
-                    // Show results
-                    const resultCard = document.getElementById('mockupResultCard');
-                    const finishedResultCard = document.getElementById('finishedResultCard');
-                    
-                    // Hide generated mockup (with green background) - not visible to user
-                    if (data.result_url) {
-                        const resultImg = document.getElementById('mockupResultImg');
-                        const downloadLink = document.getElementById('downloadMockupLink');
-                        resultImg.src = data.result_url;
-                        downloadLink.href = data.result_url;
-                        downloadLink.download = `mockup_${sku}_${Date.now()}.png`;
-                        // Don't show this card to user
-                        resultCard.style.display = 'none';
-                    }
-                    
-                    // Show finished result (without background)
-                    if (data.finished_result_url) {
-                        const finishedImg = document.getElementById('finishedResultImg');
-                        const downloadFinishedLink = document.getElementById('downloadFinishedLink');
-                        finishedImg.src = data.finished_result_url;
-                        downloadFinishedLink.href = data.finished_result_url;
-                        downloadFinishedLink.download = `mockup_finished_${sku}_${Date.now()}.png`;
-                        finishedResultCard.style.display = 'block';
-                        finishedResultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                    }
-                } else {
-                    throw new Error(data.error || 'Mockup generation failed');
-                }
-            } catch (error) {
-                status.className = 'status error';
-                status.textContent = 'Error: ' + error.message;
-                status.style.display = 'block';
-                progress.style.display = 'none';
-            } finally {
-                submitBtn.disabled = false;
-            }
-        });
-        
         // ==================== COMBINED GENERATOR FUNCTIONS ====================
         
         // Preview vial image for Combined
