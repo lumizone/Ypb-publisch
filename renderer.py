@@ -5,8 +5,21 @@ from typing import Tuple, Optional, Dict
 import logging
 import subprocess
 import shutil
+import warnings
 
 logger = logging.getLogger(__name__)
+
+# Suppress ReportLab/svglib "Group clipping" warnings
+# These are harmless - PDFs generate correctly despite warnings
+warnings.filterwarnings('ignore', message='.*Unsupported shape type.*')
+warnings.filterwarnings('ignore', category=UserWarning, module='svglib.*')
+
+# Filter root logger (ReportLab logs to root)
+class ReportLabFilter(logging.Filter):
+    def filter(self, record):
+        return 'Unsupported shape type Group' not in record.getMessage()
+
+logging.getLogger().addFilter(ReportLabFilter())
 
 # Check for cairosvg availability
 try:

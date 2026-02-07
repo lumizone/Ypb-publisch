@@ -66,6 +66,24 @@ RUN set -x \
     && echo "🔍 Font verification:" \
     && fc-list | grep -i "arial\|liberation" | head -10 || true
 
+# Install Google Fonts - COMPREHENSIVE COLLECTION (1500+ font families)
+# This gives us access to fonts like Montserrat (Gotham alternative), Inter (Acumin alternative),
+# Roboto, Open Sans, and thousands of other high-quality fonts
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && echo "📥 Downloading Google Fonts repository (1500+ fonts)..." \
+    && git clone --depth 1 https://github.com/google/fonts.git /tmp/gfonts \
+    && echo "📦 Installing Google Fonts..." \
+    && mkdir -p /usr/share/fonts/truetype/google-fonts \
+    && find /tmp/gfonts -name "*.ttf" -exec cp {} /usr/share/fonts/truetype/google-fonts/ \; \
+    && echo "✅ Installed $(find /usr/share/fonts/truetype/google-fonts -name "*.ttf" | wc -l) Google Fonts" \
+    && fc-cache -f -v \
+    && rm -rf /tmp/gfonts \
+    && apt-get remove -y git \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && echo "🔍 Google Fonts verification:" \
+    && fc-list | grep -i "montserrat\|inter\|roboto" | head -5 || true
+
 # Installed fonts:
 # - Microsoft Core: Arial, Arial Bold, Arial Italic, Arial Bold Italic
 #                   Times New Roman (all weights), Courier New (all weights)
@@ -75,6 +93,7 @@ RUN set -x \
 # - Noto: Google's comprehensive Unicode font
 # - URW: PostScript base fonts
 # - FreeFonts: GNU free fonts
+# - Google Fonts: 1500+ families (Montserrat, Inter, Roboto, Open Sans, Lato, Poppins, etc.)
 
 # Set working directory
 WORKDIR /app

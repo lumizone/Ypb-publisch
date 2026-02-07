@@ -1414,8 +1414,8 @@ def generate_labels():
         processor = BatchProcessor(template_path, csv_path, text_areas=text_areas)
         summary = processor.process_batch(output_dir=output_dir, limit=None)
         
-        # Create ZIP - ALL PRODUCTS with SKU folder structure
-        zip_path = output_dir / f"labels_{job_id}.zip"
+        # Create ZIP in temp/ - ALL PRODUCTS with SKU folder structure
+        zip_path = config.TEMP_DIR / f"labels_{job_id}.zip"
         packager = Packager()
         packager.create_zip_from_results(summary['results'], zip_path=zip_path, limit=None)
         # #region agent log
@@ -3619,9 +3619,9 @@ def _generate_labels_task(job_id, tracking_id, template_path, products, text_are
                     'percentage': int(((i + 1) / len(products)) * 100)
                 })
 
-        # Create ZIP file with folder structure: labels/SKU/files
+        # Create ZIP file in temp/ (auto-cleanup, no archive)
         zip_filename = f"labels_{job_id}.zip"
-        zip_path = output_dir / zip_filename
+        zip_path = config.TEMP_DIR / zip_filename
 
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for label in labels:
@@ -4079,9 +4079,9 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                     logger.error(f"Mockup generation error: {e}")
                     errors.append(str(e))
 
-        # Create ZIP
+        # Create ZIP in temp/ (auto-cleanup, no archive)
         zip_filename = f"mockups_{job_id}.zip"
-        zip_path = output_dir / zip_filename
+        zip_path = config.TEMP_DIR / zip_filename
 
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for mockup in mockups:
@@ -4604,7 +4604,7 @@ def generate_batch_mockups():
                     continue
             
             # Create ZIP with all mockups
-            zip_path = config.OUTPUT_DIR / f"batch_mockups_{job_id}.zip"
+            zip_path = config.TEMP_DIR / f"batch_mockups_{job_id}.zip"
             try:
                 import zipfile
                 with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -5097,18 +5097,18 @@ def extract_svg_text_info(svg_path: Path) -> dict:
                     break
         
         return {
-            'sku': sku,
-            'product_name': product_name,
-            'ingredients': ingredients,
+            'sku': sku or '',  # Never return None - use empty string
+            'product_name': product_name or '',
+            'ingredients': ingredients or '',
             'has_research_use_only': has_research_use_only
         }
-        
+
     except Exception as e:
         logger.error(f"Error extracting SVG text info: {e}")
         return {
-            'sku': None,
-            'product_name': None,
-            'ingredients': None,
+            'sku': '',  # Return empty string instead of None
+            'product_name': '',
+            'ingredients': '',
             'has_research_use_only': False
         }
 

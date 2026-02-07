@@ -117,6 +117,38 @@ class TextFormatter:
             'calibri bold': ['calibrib.ttf', 'Calibri-Bold.ttf', 'LiberationSans-Bold.ttf'],
             'calibri italic': ['calibrii.ttf', 'Calibri-Italic.ttf', 'LiberationSans-Italic.ttf'],
             'calibri bold italic': ['calibriz.ttf', 'Calibri-BoldItalic.ttf', 'LiberationSans-BoldItalic.ttf'],
+
+            # ACUMIN VARIABLE CONCEPT (Adobe Font → Google Fonts alternatives)
+            'acuminvariableconcept': ['Inter-Regular.ttf', 'Montserrat-Regular.ttf', 'SourceSansPro-Regular.ttf', 'LiberationSans-Regular.ttf'],
+            'acumin variable concept': ['Inter-Regular.ttf', 'Montserrat-Regular.ttf', 'SourceSansPro-Regular.ttf', 'LiberationSans-Regular.ttf'],
+            'acumin': ['Inter-Regular.ttf', 'Montserrat-Regular.ttf', 'SourceSansPro-Regular.ttf', 'LiberationSans-Regular.ttf'],
+
+            # GOTHAM (Hoefler & Co. → Montserrat is best free alternative)
+            'gotham': ['Montserrat-Medium.ttf', 'Montserrat-Regular.ttf', 'NunitoSans-Regular.ttf', 'Arial.ttf', 'LiberationSans-Regular.ttf'],
+            'gotham medium': ['Montserrat-Medium.ttf', 'Montserrat-SemiBold.ttf', 'NunitoSans-SemiBold.ttf', 'Arial-Bold.ttf', 'LiberationSans-Bold.ttf'],
+            'gotham bold': ['Montserrat-Bold.ttf', 'Montserrat-SemiBold.ttf', 'NunitoSans-Bold.ttf', 'Arial-Bold.ttf', 'LiberationSans-Bold.ttf'],
+            'gothammedium': ['Montserrat-Medium.ttf', 'Montserrat-SemiBold.ttf', 'NunitoSans-SemiBold.ttf', 'Arial-Bold.ttf', 'LiberationSans-Bold.ttf'],
+
+            # MONTSERRAT (Google Font - Gotham alternative)
+            'montserrat': ['Montserrat-Regular.ttf', 'LiberationSans-Regular.ttf'],
+            'montserrat medium': ['Montserrat-Medium.ttf', 'Montserrat-SemiBold.ttf', 'LiberationSans-Bold.ttf'],
+            'montserrat bold': ['Montserrat-Bold.ttf', 'LiberationSans-Bold.ttf'],
+            'montserrat semibold': ['Montserrat-SemiBold.ttf', 'Montserrat-Medium.ttf', 'LiberationSans-Bold.ttf'],
+
+            # INTER (Google Font - Acumin alternative)
+            'inter': ['Inter-Regular.ttf', 'LiberationSans-Regular.ttf'],
+            'inter medium': ['Inter-Medium.ttf', 'Inter-SemiBold.ttf', 'LiberationSans-Bold.ttf'],
+            'inter bold': ['Inter-Bold.ttf', 'LiberationSans-Bold.ttf'],
+
+            # ROBOTO (Google Font - very popular)
+            'roboto': ['Roboto-Regular.ttf', 'LiberationSans-Regular.ttf'],
+            'roboto medium': ['Roboto-Medium.ttf', 'Roboto-Bold.ttf', 'LiberationSans-Bold.ttf'],
+            'roboto bold': ['Roboto-Bold.ttf', 'LiberationSans-Bold.ttf'],
+
+            # OPEN SANS (Google Font - very popular)
+            'open sans': ['OpenSans-Regular.ttf', 'LiberationSans-Regular.ttf'],
+            'open sans medium': ['OpenSans-Medium.ttf', 'OpenSans-SemiBold.ttf', 'LiberationSans-Bold.ttf'],
+            'open sans bold': ['OpenSans-Bold.ttf', 'LiberationSans-Bold.ttf'],
         }
 
         # Try exact match first
