@@ -965,9 +965,9 @@ Graceful timeout: 30s → 60s
 
 ```
 /Users/lukasz/YPBv2/
-├── app.py (4709 linii)           # Flask application
+├── app.py (6135 linii)           # Flask application
 ├── app_dashboard.html            # Frontend UI
-├── ai_converter.py               # AI → SVG (PyMuPDF)
+├── ai_converter.py (1666 linii)  # AI → SVG (PyMuPDF) + CFF decoding + PIL fallback
 ├── text_replacer.py              # Text replacement engine
 ├── text_formatter.py             # Intelligent text wrapping
 ├── batch_processor.py            # Batch processing (parallel)
@@ -1095,8 +1095,11 @@ tail -f /tmp/flask_app.log
 
 ## 📈 STATYSTYKI
 
-- **Kod Python**: ~7,800 linii
-- **Frontend**: 368 KB (app_dashboard.html)
+- **Kod Python**: ~12,400 linii (14 plików)
+- **Frontend**: 416 KB / 8,541 linii (app_dashboard.html)
+- **Total codebase**: ~20,900 linii
+- **Google Fonts**: 398 plików TTF (81 rodzin, 32 MB)
+- **Fontconfig aliases**: 188 match rules
 - **Database**: 92 produkty (YPB.100 - YPB.283)
 - **Output total**: ~1.1 GB (archiwum)
 - **Avg label generation**: 2 minuty
@@ -1129,8 +1132,14 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 - ✅ **CFF Font Decoding** - dekodowanie CFF charset z plików AI (eliminacja garbled text)
 - ✅ **SVG Position-Based Fallback** - text replacement by position (backup dla garbled)
 - ✅ **PIL Overlay Fallback** - render paths→PNG + PIL text overlay (ostatnia deska ratunku)
+- ✅ **Gemini OCR Module** - nowy `gemini_ocr.py` do ekstrakcji tekstu z AI preview
 - ✅ **FONT_ALTERNATIVES dict** - 60+ mapowań komercyjnych→Google Fonts w ai_converter.py
+- ✅ **Mockup Progress Bar** - elapsed time, ETA, fazy generowania zamiast statycznego "Starting..."
+- ✅ **Standalone Mockup Timer** - animowane fazy z elapsed timer (Sending→Processing→Almost done)
+- ✅ **Security** - usunięto hardcoded API keys z dokumentacji (CLAUDE.md, RAILWAY_*.md)
+- ✅ **.gitignore** - dodano fonts/ (32MB) i test_results_*/
 - ✅ **Kluczowe mapowania**: Gotham→Montserrat, Helvetica→Inter, Futura→Nunito, Avenir→Nunito Sans, Century Gothic→Poppins, Franklin Gothic→Libre Franklin, Myriad Pro→Source Sans 3, DIN→Oswald, Circular→DM Sans, Knockout→Bebas Neue
+- ✅ **Commit**: `1261d58` - pushed to GitHub
 
 ### 5 lutego 2026
 - ✅ **FEATURE: Product Selection** - wybór konkretnych produktów w Combined Generator
@@ -1216,5 +1225,5 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ---
 
-**Last Updated**: 8 lutego 2026
-**Status**: ✅ Production Ready - Google Fonts (398) + CFF Decoding + Fontconfig Aliases (188) + Performance Optimized
+**Last Updated**: 8 lutego 2026 (commit: 1261d58)
+**Status**: ✅ Production Ready - Google Fonts (398) + CFF Decoding + Fontconfig (188 aliases) + Mockup Progress UX

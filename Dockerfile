@@ -119,5 +119,6 @@ EXPOSE 8000
 
 # Run the application with Gunicorn (production server)
 # Uses $PORT from Railway environment variable
-# 4 workers x 4 threads = 16 concurrent requests for 8 CPU plan
-CMD gunicorn -w 4 -b 0.0.0.0:$PORT --timeout 900 --threads 4 --graceful-timeout 120 app:app
+# 1 worker x 16 threads = shared in-memory state (progress_tracker, background_results)
+# Multiple workers cause progress bar to break (each worker has separate memory)
+CMD gunicorn -w 1 -b 0.0.0.0:$PORT --timeout 900 --threads 16 --graceful-timeout 120 app:app

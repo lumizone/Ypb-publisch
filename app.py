@@ -3741,7 +3741,26 @@ def _generate_labels_task(
             except Exception as tag_err:
                 logger.warning(f"Position tagging failed (will try normal parse): {tag_err}")
 
+        # Initialize BatchProcessor ONCE for all products (was: 1 per product = 92x slower!)
+        import csv
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
+        # Create single temp CSV with all products
+        temp_csv_path = config.TEMP_DIR / f"all_products_{job_id}.csv"
+        with open(temp_csv_path, 'w', newline='', encoding='utf-8') as f:
+            fieldnames = ['Product', 'Ingredients', 'SKU']
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for p in products:
+                writer.writerow({k: v for k, v in p.items() if k in fieldnames})
+
+        processor = BatchProcessor(template_path, temp_csv_path, text_areas=text_areas, text_alignments=text_alignments)
+        processor.initialize()
+        logger.info(f"BatchProcessor initialized once for {len(products)} products")
+
         # Generate labels for each product
+        LABEL_TIMEOUT = 60  # 60 seconds per label
+
         for i, product in enumerate(products):
             try:
                 product_name = product.get('Product', 'Unknown')
@@ -3759,37 +3778,21 @@ def _generate_labels_task(
 
                 logger.info(f"Processing label {i+1}/{len(products)}: {product_name} ({sku})")
 
-                # Create temp CSV for single product
-                import csv
-                import signal
-                from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-
                 temp_dir = config.TEMP_DIR / f"label_{sku.replace('/', '_')}_{job_id}"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                temp_csv = temp_dir / "temp_product.csv"
 
-                with open(temp_csv, 'w', newline='', encoding='utf-8') as f:
-                    fieldnames = ['Product', 'Ingredients', 'SKU']
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
-                    filtered_product = {k: v for k, v in product.items() if k in fieldnames}
-                    writer.writerow(filtered_product)
+                # Generate label WITH TIMEOUT using shared processor
+                def generate_single_label(prod=product, out=temp_dir):
+                    return processor.process_product(prod, out)
 
-                # Generate label WITH TIMEOUT (60 seconds per label max)
-                def generate_single_label():
-                    processor = BatchProcessor(template_path, temp_csv, text_areas=text_areas, text_alignments=text_alignments)
-                    return processor.process_batch(output_dir=temp_dir, limit=1)
-
-                LABEL_TIMEOUT = 60  # 60 seconds per label
-                result = None
+                result_data = None
                 try:
                     with ThreadPoolExecutor(max_workers=1) as executor:
                         future = executor.submit(generate_single_label)
-                        result = future.result(timeout=LABEL_TIMEOUT)
+                        result_data = future.result(timeout=LABEL_TIMEOUT)
                 except FuturesTimeoutError:
                     logger.error(f"⚠️ TIMEOUT generating label for {sku} (>{LABEL_TIMEOUT}s) - SKIPPING")
                     errors.append(f"{sku}: Timeout after {LABEL_TIMEOUT}s")
-                    # Update progress and continue to next label
                     progress_tracker.set(tracking_id, {
                         'current': i + 1,
                         'total': len(products),
@@ -3797,7 +3800,7 @@ def _generate_labels_task(
                         'message': f'Skipped (timeout): {product_name}',
                         'percentage': int(((i + 1) / len(products)) * 100)
                     })
-                    continue  # Skip to next product
+                    continue
                 except Exception as label_error:
                     logger.error(f"Error in label generation for {sku}: {label_error}")
                     errors.append(f"{sku}: {str(label_error)}")
@@ -3808,7 +3811,10 @@ def _generate_labels_task(
                         'message': f'Error: {product_name}',
                         'percentage': int(((i + 1) / len(products)) * 100)
                     })
-                    continue  # Skip to next product
+                    continue
+
+                # Process result from process_product (returns single result dict)
+                result = {'results': [result_data]} if result_data else {'results': []}
 
                 # Find generated files and copy all formats (SVG, PNG, PDF)
                 for res in result.get('results', []):
