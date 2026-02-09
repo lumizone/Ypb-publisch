@@ -28,7 +28,7 @@ git push origin main
 3. Go to "Variables" tab
 4. Add variable:
    ```
-   GEMINI_API_KEY=AIzaSyCSyrlmwF9LJ8haOrsC5bn4St-viT4wsMM
+   GEMINI_API_KEY=your_gemini_api_key_here
    ```
 5. Click "Add" and redeploy
 

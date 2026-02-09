@@ -1,6 +1,6 @@
 # YPBv2 - Label & Mockup Generator
 
-**Status**: ✅ Production Ready (5 lutego 2026)
+**Status**: ✅ Production Ready (8 lutego 2026)
 **Lokalizacja**: `/Users/lukasz/YPBv2`
 **Port**: http://localhost:8000
 **Railway**: https://ypbv2.up.railway.app (8 CPU / 8GB RAM)
@@ -8,6 +8,192 @@
 ---
 
 ## 🎯 AKTUALNY STAN APLIKACJI
+
+### ✅ Google Fonts Library + Fontconfig Aliases (08.02.2026)
+
+**Cel**: Automatyczne mapowanie komercyjnych fontów (Gotham, Proxima Nova, Helvetica Neue, etc.) na darmowe Google Fonts - eliminacja potrzeby fallbacku
+
+---
+
+#### Problem
+- AI templates używają komercyjnych fontów (Gotham, Proxima Nova, Futura, etc.)
+- CairoSVG (renderer SVG→PNG) nie ma tych fontów → fallback do Verdana/Arial
+- Stary hybrid fallback (PIL overlay) zmieniał pozycje tekstu
+
+#### Rozwiązanie: Google Fonts + Fontconfig Strong Matching
+
+**1. Pobrano 398 Google Fonts (81 rodzin)** do `fonts/google/`:
+- Sans-Serif: Montserrat, Inter, Open Sans, Roboto, Lato, Poppins, Raleway, Barlow, Work Sans, DM Sans, Nunito, Nunito Sans, Libre Franklin, Source Sans 3, Plus Jakarta Sans, Public Sans, Manrope, Outfit, Sora, Figtree, Mulish, Cabin, Rubik, Karla, Hind, Catamaran, Kanit, Josefin Sans, Lexend, Overpass, Red Hat Display, Exo 2, Signika, Quicksand, Comfortaa, Fredoka, Yantramanav, Maven Pro, Space Grotesk, PT Sans
+- Serif: EB Garamond, Playfair Display, Merriweather, Lora, Noto Serif, Source Serif 4, Libre Baskerville, Vollkorn, Bitter, Crimson Text, Cormorant Garamond, PT Serif, Roboto Slab, DM Serif Display, DM Serif Text
+- Display: Bebas Neue, Anton, Oswald, Teko, Big Shoulders Display, Abril Fatface, Alfa Slab One, Black Ops One, Bungee, Righteous, Russo One, Secular One, Titan One
+- Monospace: Fira Code, JetBrains Mono, IBM Plex Mono, Source Code Pro, Space Mono
+- Handwriting: Caveat, Dancing Script, Great Vibes, Pacifico, Sacramento
+
+**2. Fontconfig `<match>` rules** (188 aliasów) w `~/.config/fontconfig/fonts.conf`:
+
+| Komercyjny Font | Google Font |
+|---|---|
+| Gotham (all variants) | Montserrat |
+| Proxima Nova | Montserrat |
+| Helvetica Neue | Inter |
+| Futura | Nunito |
+| Avenir / Avenir Next | Nunito Sans |
+| Century Gothic | Poppins |
+| Gill Sans | Lato |
+| Franklin Gothic | Libre Franklin |
+| Myriad Pro | Source Sans 3 |
+| AcuminVariableConcept | Inter |
+| Garamond / Adobe Garamond | EB Garamond |
+| DIN / DIN Next | Oswald |
+| Trade Gothic | Barlow |
+| Brandon Grotesque | Raleway |
+| Museo Sans | Work Sans |
+| Circular / Circular Std | DM Sans |
+| Graphik | Manrope |
+| Univers | Inter |
+| Frutiger | Nunito Sans |
+| Segoe UI | Roboto |
+| SF Pro / San Francisco | Inter |
+| Bodoni / Didot | Playfair Display |
+| Minion Pro | Merriweather |
+| Knockout | Bebas Neue |
+| + 30 więcej... | |
+
+**3. Użycie `<match>` zamiast `<alias>`:**
+- `<alias><prefer>` - słabe: fontconfig scoring może wybrać inny font
+- `<match mode="assign" binding="strong">` - silne: bezwzględna zamiana nazwy fontu
+- Wynik: `fc-match "Franklin Gothic"` → `LibreFranklin-Regular.ttf` (nie Verdana!)
+
+#### Implementacja
+
+**Pliki:**
+- `fonts/google/` - 398 TTF plików (81 rodzin, wszystkie wagi: Light/Regular/Medium/SemiBold/Bold/ExtraBold/Black)
+- `fonts/montserrat/` - 9 Montserrat TTF (dodatkowy zestaw)
+- `~/.config/fontconfig/fonts.conf` - 188 `<match>` rules + 2 `<dir>` entries
+- `ai_converter.py` - `FONT_ALTERNATIVES` dict (60+ mapowań dla PIL fallbacku)
+  - `_get_pil_font()` - szuka fontu w bundled Google Fonts
+  - `_fit_pil_text()` - dobiera rozmiar fontu do area
+  - `generate_hybrid_label()` - PIL overlay (backup fallback)
+
+**Kluczowe:**
+- Normal pipeline (CairoSVG) automatycznie używa Google Fonts przez fontconfig
+- Nie trzeba fallbacku - fontconfig podmienia nazwy fontów przed renderingiem
+- PIL overlay nadal dostępny jako backup gdy tekst jest garbled (≥3 `�`)
+- Fonty pobrane z fontsource CDN: `cdn.jsdelivr.net/fontsource/fonts/{slug}@latest/latin-{weight}-normal.ttf`
+
+**Status**: ✅ Zaimplementowane - 398 fontów, 188 aliasów, zero fallback needed
+
+---
+
+### ✅ CFF Font Decoding for AI Files (08.02.2026)
+
+**Cel**: Dekodowanie CFF fontów z plików AI - eliminacja garbled text (������)
+
+---
+
+#### Problem
+- Niektóre pliki AI zawierają fonty CFF (np. AcuminVariableConcept) z custom Type1 encoding
+- Znaki kontrolne (0x00-0x1F) w content stream
+- PyMuPDF nie potrafi zdekodować → produkuje `U+FFFD` (garbled text ������)
+
+#### Rozwiązanie: CFF Charset Decoding Pipeline
+
+**Flow:**
+```
+1. AI file → PyMuPDF → SVG (sprawdza czy garbled)
+2. Jeśli garbled: parsuj PDF content stream dla raw char codes
+3. Mapuj przez CFF charset: char_code → gidNNNNN → GID → Unicode
+4. Podmień garbled text w SVG na zdekodowany tekst
+5. Normalna generacja labels (bez fallbacku!)
+```
+
+**Implementacja w `ai_converter.py`:**
+- `_build_cff_decode_map()` - parsuje content stream, buduje mapę char→Unicode
+- `_build_gid_to_unicode_from_widths()` - mapowanie GID→Unicode przez width-matching
+- `_build_gid_to_unicode_standard()` - fallback: GID 1=space, 2-27=A-Z, 28-53=a-z, 131-140=0-9
+- Wymaga `fonttools` package
+
+**Kluczowe:**
+- Tylko fonty z `gidNNNNN` glyph names wymagają dekodowania
+- Standardowe glyph names działają normalnie w PyMuPDF
+- Wynik: zero garbled text, brak potrzeby Gemini OCR
+
+**Status**: ✅ Zaimplementowane
+
+---
+
+### ✅ SVG Position-Based Fallback (08.02.2026)
+
+**Cel**: Fallback gdy PyMuPDF produkuje garbled text (������) - SVG text replacement by position
+
+---
+
+#### Problem
+- PyMuPDF konwertuje AI → SVG ale tekst jest garbled (������)
+- Custom font encoding, nie Unicode
+- SVG ma poprawne: pozycje (x,y), font-family, font-size, color, transforms
+- **Tylko TEXT CONTENT jest zły** - reszta SVG jest pixel-perfect
+
+#### Rozwiązanie: SVG Position-Based Text Replacement
+
+**Flow (TRANSPARENTNY dla usera - frontend bez zmian!):**
+
+```
+1. AI file → PyMuPDF → SVG z garbled text (������)
+2. Wykrycie garbled (≥3 znaków �)
+3. Gemini OCR (1 request): extract SKU + product_name (tylko odczyt!)
+4. User widzi PNG preview (zamiast broken SVG)
+5. User rysuje areas na PNG (SVG overlay)
+6. Generate Labels:
+   - Backend wykrywa garbled w SVG → SVG fallback mode
+   - parse_by_position() znajduje <text>/<use>/<g> elementy po koordynatach
+   - Taguje je data-placeholder (product_name, ingredients, sku)
+   - Dla każdego produktu:
+     - TextReplacer.replace() → podmiana tekstu w SVG
+     - Renderer.render_all_formats() → PNG + JPG + PDF
+   - Output: SVG + PNG + PDF + JPG (identyczny z main flow)
+   - ZERO wywołań Gemini do generowania obrazów!
+```
+
+#### Implementacja
+
+**Pliki:**
+- `template_parser.py` - TemplateParser class
+  - `parse_by_position(text_areas)` - znajduje elementy SVG po pozycji (x,y w area)
+  - `_collect_text_elements()` - rekurencyjnie zbiera <text>/<use>/<g> z resolved positions
+  - `_resolve_position()` - rozwiązuje łańcuch transform (matrix/scale/translate)
+  - `_parse_transform()` - parsuje SVG transform attribute
+  - Taguje znalezione elementy `data-placeholder` → istniejący TextReplacer działa bez zmian
+
+- `app.py`
+  - `/api/convert-ai-to-svg` - wykrywa garbled, uruchamia Gemini OCR (tylko odczyt), zwraca preview_png
+  - `_generate_labels_svg_fallback()` - generuje labels przez SVG pipeline (nie Gemini!)
+  - `_generate_labels_task()` - sprawdza garbled, wywołuje SVG fallback jeśli potrzeba
+
+- `app_dashboard.html`
+  - PNG preview z SVG overlay dla areas
+  - Frontend NIE WIE o fallback - transparentne
+  - Usunięty martwy kod: Gemini Annotation Modal + 12 JS functions
+
+**Gemini Models (tylko OCR - odczyt):**
+- OCR: `gemini-2.5-flash` - analiza obrazu, ekstrakcja tekstu (SKU, product_name)
+- **Usunięto**: `gemini-2.0-flash-exp` image generation - nie jest już używane
+
+**Usunięty kod:**
+- `_generate_labels_gemini_fallback()` - stara funkcja Gemini (293 linii)
+- `/api/finalize-gemini-label` endpoint (125 linii)
+- Gemini Annotation Modal + JS functions (~300 linii frontend)
+
+**Kluczowe:**
+- User NIE widzi że to fallback
+- Areas działają tak samo jak na SVG (draggable, resizable)
+- Grafika/tło SVG **pixel-perfect** (nie regenerowane przez Gemini)
+- Output identyczny z main flow: SVG + PNG + PDF + JPG (wektor!)
+- Zero API calls do Gemini na generowanie (tylko 1 OCR na początku)
+
+**Status**: ✅ Zaimplementowane
+
+---
 
 ### ✅ Product Selection Feature (05.02.2026) 🎯
 
@@ -791,11 +977,15 @@ Graceful timeout: 30s → 60s
 ├── csv_manager.py                # CSV database handling
 ├── progress_tracker.py           # Thread-safe progress tracking
 ├── cleanup_utils.py              # Temp file cleanup
+├── gemini_ocr.py                 # Gemini OCR for garbled text
 ├── config.py                     # Configuration
 ├── .env.local                    # API keys
 ├── requirements.txt              # Python dependencies
 ├── databases/
 │   └── YPB_final_databse.csv    # 92 produkty
+├── fonts/
+│   ├── google/                  # 398 Google Fonts TTF (81 families)
+│   └── montserrat/              # 9 Montserrat TTF
 ├── temp/                         # Tymczasowe pliki (auto-cleanup)
 ├── output/                       # Wygenerowane labels & mockups
 └── uploads/                      # Przesłane templates & images
@@ -807,9 +997,9 @@ Graceful timeout: 30s → 60s
 
 ### Environment Variables (.env.local)
 ```bash
-GEMINI_API_KEY=AIzaSyCSyrlmwF9LJ8haOrsC5bn4St-viT4wsMM
+GEMINI_API_KEY=your_gemini_api_key_here
 AUTH_USER=Admin
-AUTH_PASS=admin123
+AUTH_PASS=your_password_here
 DISABLE_AUTH=true
 ```
 
@@ -932,6 +1122,16 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ## 📝 CHANGELOG
 
+### 8 lutego 2026
+- ✅ **Google Fonts Library** - 398 fontów (81 rodzin) pobrane z fontsource CDN
+- ✅ **Fontconfig Aliases** - 188 `<match>` rules mapujących komercyjne→Google Fonts
+- ✅ **Strong Matching** - `<match mode="assign" binding="strong">` zamiast `<alias><prefer>`
+- ✅ **CFF Font Decoding** - dekodowanie CFF charset z plików AI (eliminacja garbled text)
+- ✅ **SVG Position-Based Fallback** - text replacement by position (backup dla garbled)
+- ✅ **PIL Overlay Fallback** - render paths→PNG + PIL text overlay (ostatnia deska ratunku)
+- ✅ **FONT_ALTERNATIVES dict** - 60+ mapowań komercyjnych→Google Fonts w ai_converter.py
+- ✅ **Kluczowe mapowania**: Gotham→Montserrat, Helvetica→Inter, Futura→Nunito, Avenir→Nunito Sans, Century Gothic→Poppins, Franklin Gothic→Libre Franklin, Myriad Pro→Source Sans 3, DIN→Oswald, Circular→DM Sans, Knockout→Bebas Neue
+
 ### 5 lutego 2026
 - ✅ **FEATURE: Product Selection** - wybór konkretnych produktów w Combined Generator
 - ✅ **Database Indicator** - nazwa bazy + liczba produktów w Step 4
@@ -1016,5 +1216,5 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ---
 
-**Last Updated**: 5 lutego 2026
-**Status**: ✅ Production Ready - Product Selection Feature + Performance Optimized + Polished UX
+**Last Updated**: 8 lutego 2026
+**Status**: ✅ Production Ready - Google Fonts (398) + CFF Decoding + Fontconfig Aliases (188) + Performance Optimized

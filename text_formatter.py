@@ -17,6 +17,7 @@ ZASADA: Tekst ma być jak NAJWIĘKSZY, nie jak najmniejszy!
 
 import re
 from math import ceil
+from pathlib import Path
 from typing import Dict, Tuple, List, Optional
 from PIL import Image, ImageDraw, ImageFont
 import logging
@@ -151,17 +152,17 @@ class TextFormatter:
             'open sans bold': ['OpenSans-Bold.ttf', 'LiberationSans-Bold.ttf'],
         }
 
-        # Try exact match first
+        # Always try the exact font name first (for fonts extracted from AI files)
+        exact_candidates = [
+            f"{font_family}.ttf",
+            f"{font_family.replace(' ', '')}.ttf",
+            f"{font_family.replace(' ', '-')}.ttf",
+        ]
+
         if font_lower in font_map:
-            candidates = font_map[font_lower]
+            candidates = exact_candidates + font_map[font_lower]
         else:
-            # Fallback: try the original name + common extensions
-            base_name = font_family.replace(' ', '-')
-            candidates = [
-                f"{font_family}.ttf",
-                f"{base_name}.ttf",
-                f"{font_family.replace(' ', '')}.ttf",
-                # Generic fallback
+            candidates = exact_candidates + [
                 'LiberationSans-Regular.ttf',
                 'DejaVuSans.ttf',
                 'FreeSans.ttf'
@@ -179,6 +180,8 @@ class TextFormatter:
 
         # Font directories to search (priority order)
         font_directories = [
+            # Fonts extracted from AI/PDF files (highest priority - exact match!)
+            str(Path(__file__).parent / "temp" / "fonts"),
             # Microsoft Core Fonts (BEST - exact match!)
             "/usr/share/fonts/truetype/msttcorefonts",
             # macOS paths

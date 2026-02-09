@@ -58,6 +58,14 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 app.config['UPLOAD_FOLDER'] = config.UPLOAD_DIR
 
+
+# Serve files from uploads directory (for preview images etc.)
+@app.route('/uploads/<path:filename>')
+def serve_uploads(filename):
+    """Serve files from uploads directory."""
+    from flask import send_from_directory
+    return send_from_directory(config.UPLOAD_DIR, filename)
+
 # GZIP compression - reduces 368KB HTML to ~50KB (7x faster loading)
 try:
     from flask_compress import Compress
@@ -233,27 +241,59 @@ DEFAULT_CSV = str(config.DATABASES_DIR / "YPB_final_databse.csv")
 # Currently selected database (can be changed via API)
 current_database = DEFAULT_CSV
 
+def _is_path_within_directory(path: Path, directory: Path) -> bool:
+    """Return True if path is located inside directory."""
+    try:
+        path.resolve().relative_to(directory.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_safe_database_path(db_path_value):
+    """Resolve database path from user input and enforce databases directory boundary."""
+    if not db_path_value:
+        return None
+
+    # Keep only the filename component and sanitize it.
+    safe_name = secure_filename(Path(str(db_path_value)).name)
+    if not safe_name or not safe_name.lower().endswith('.csv'):
+        return None
+
+    candidate = (config.DATABASES_DIR / safe_name).resolve()
+    if not _is_path_within_directory(candidate, config.DATABASES_DIR):
+        return None
+
+    return candidate
+
+
 def get_current_database():
     """Get the currently selected database path."""
     global current_database
-    
-    # If current database exists, return it
-    if current_database and Path(current_database).exists():
-        return current_database
-    
+
+    # If current database exists and is safe, return it
+    if current_database:
+        safe_current = _resolve_safe_database_path(current_database)
+        if safe_current and safe_current.exists():
+            current_database = str(safe_current)
+            return current_database
+        if not safe_current:
+            logger.warning(f"Ignoring unsafe current database path: {current_database}")
+
     # If default exists, use it
-    if Path(DEFAULT_CSV).exists():
-        current_database = DEFAULT_CSV
+    default_db = _resolve_safe_database_path(DEFAULT_CSV)
+    if default_db and default_db.exists():
+        current_database = str(default_db)
         return current_database
-    
+
     # Otherwise, find first available CSV in databases directory
     db_dir = config.DATABASES_DIR
-    csv_files = list(db_dir.glob('*.csv'))
+    csv_files = sorted(db_dir.glob('*.csv'))
     if csv_files:
-        current_database = str(csv_files[0])
+        current_database = str(csv_files[0].resolve())
         logger.info(f"Auto-selected database: {current_database}")
         return current_database
-    
+
     # No database found
     logger.warning("No database files found in databases directory")
     return DEFAULT_CSV
@@ -261,9 +301,13 @@ def get_current_database():
 def set_current_database(db_path):
     """Set the currently selected database."""
     global current_database
-    if Path(db_path).exists():
-        current_database = str(db_path)
+
+    safe_path = _resolve_safe_database_path(db_path)
+    if safe_path and safe_path.exists():
+        current_database = str(safe_path)
         return True
+
+    logger.warning(f"Rejected database path outside databases/: {db_path}")
     return False
 
 # Load dashboard HTML
@@ -1661,30 +1705,24 @@ def list_databases():
 def select_database():
     """Select a database to use."""
     try:
-        data = request.json
+        data = request.json or {}
         db_path = data.get('path') or data.get('filename')
-        
+
         if not db_path:
             return jsonify({'error': 'No database path provided'}), 400
-        
-        # If only filename provided, construct full path
-        if not Path(db_path).is_absolute():
-            db_path = str(config.DATABASES_DIR / db_path)
-        
-        if not Path(db_path).exists():
-            return jsonify({'error': f'Database not found: {db_path}'}), 404
-        
+
         if set_current_database(db_path):
             _invalidate_db_cache()
-            logger.info(f"Database selected: {db_path}")
+            selected_db = get_current_database()
+            logger.info(f"Database selected: {selected_db}")
             return jsonify({
                 'success': True,
-                'current': get_current_database(),
-                'message': f'Database selected: {Path(db_path).stem}'
+                'current': selected_db,
+                'message': f'Database selected: {Path(selected_db).stem}'
             })
         else:
-            return jsonify({'error': 'Failed to select database'}), 500
-            
+            return jsonify({'error': 'Invalid database path. Only CSV files from databases/ are allowed.'}), 400
+
     except Exception as e:
         logger.error(f"Error selecting database: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
@@ -3445,11 +3483,238 @@ RULES:
 
 # ============== Combined Generator - Two Step Process ==============
 
-@run_in_background
-def _generate_labels_task(job_id, tracking_id, template_path, products, text_areas, output_dir, text_alignments=None):
-    """Background task for generating labels - runs in separate thread"""
+def _generate_labels_svg_fallback(job_id, tracking_id, template_path, products, text_areas, output_dir, text_alignments=None, extracted_info=None):
+    """Generate labels using HYBRID approach: text as paths (pixel-perfect) + selective text replacement.
+
+    Instead of converting all text to editable <text> and replacing (which breaks fonts/styling),
+    this approach keeps everything as vector paths and only replaces the target text areas.
+
+    Steps:
+    1. Find original AI file from SVG template path
+    2. Create hybrid base: SVG with all text as paths + embedded fonts
+    3. For each product: remove target <use> elements, add replacement <text>
+    4. Render to PNG/JPG/PDF
+
+    Result: background, logo, static text = PIXEL-PERFECT (paths)
+            product_name, ingredients, sku = new text with embedded font
+    """
+    import zipfile
+
     if text_alignments is None:
         text_alignments = {}
+
+    try:
+        labels = []
+        errors = []
+
+        logger.info(f"[Hybrid Fallback] Starting for {len(products)} products")
+        logger.info(f"[Hybrid Fallback] Template: {template_path}")
+        logger.info(f"[Hybrid Fallback] Text areas: {list(text_areas.keys())}")
+
+        # Initialize progress
+        progress_tracker.set(tracking_id, {
+            'current': 0,
+            'total': len(products),
+            'status': 'processing',
+            'message': 'Starting hybrid fallback generation...',
+            'current_product': '',
+            'percentage': 0
+        })
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Step 1: Find original AI file
+        template_path = Path(template_path)
+        ai_path = _find_ai_file_for_svg(template_path)
+        if not ai_path:
+            raise Exception(f"Cannot find original AI file for {template_path.name}")
+
+        logger.info(f"[Hybrid Fallback] Found AI file: {ai_path}")
+
+        # Step 2: Create hybrid base SVG
+        from ai_converter import AIConverter
+        converter = AIConverter()
+        hybrid_base_path = config.TEMP_DIR / f"hybrid_base_{job_id}.svg"
+        hybrid_base = converter.create_hybrid_base(ai_path, hybrid_base_path, text_areas)
+
+        logger.info(f"[Hybrid Fallback] Hybrid base created: {len(hybrid_base['elements_by_area'])} areas")
+
+        # Step 3: Generate labels for each product
+        for i, product in enumerate(products):
+            try:
+                product_name = product.get('Product', 'Unknown')
+                sku = product.get('SKU', f'UNKNOWN_{i}')
+
+                progress_tracker.set(tracking_id, {
+                    'current': i,
+                    'total': len(products),
+                    'status': 'processing',
+                    'message': f'Generating: {product_name}',
+                    'current_product': product_name,
+                    'percentage': int((i / len(products)) * 100)
+                })
+
+                logger.info(f"[Hybrid Fallback] {i+1}/{len(products)}: {product_name} ({sku})")
+
+                result = converter.generate_hybrid_label(hybrid_base, product, output_dir)
+
+                if result:
+                    preview_file = result.get('png') or result.get('jpg')
+                    preview_filename = Path(preview_file).name if preview_file else None
+
+                    labels.append({
+                        'sku': sku,
+                        'product_name': product_name,
+                        'filename': preview_filename,
+                        'path': preview_file,
+                        'files': result,
+                        'preview_url': f'/api/label-preview/{job_id}/{preview_filename}' if preview_filename else None
+                    })
+
+                    progress_tracker.set(tracking_id, {
+                        'current': i + 1, 'total': len(products), 'status': 'processing',
+                        'message': f'Completed: {product_name}', 'current_product': product_name,
+                        'percentage': int(((i + 1) / len(products)) * 100)
+                    })
+                else:
+                    errors.append(f"{sku}: generation returned no result")
+
+            except Exception as e:
+                logger.error(f"[Hybrid Fallback] Error for {sku}: {e}")
+                errors.append(f"{sku}: {str(e)}")
+                progress_tracker.set(tracking_id, {
+                    'current': i + 1, 'total': len(products), 'status': 'processing',
+                    'message': f'Error: {product_name}', 'current_product': product_name,
+                    'percentage': int(((i + 1) / len(products)) * 100)
+                })
+
+        # Create ZIP
+        zip_filename = f"labels_{job_id}.zip"
+        zip_path = config.TEMP_DIR / zip_filename
+
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for label in labels:
+                sku_safe = label['sku'].replace('/', '_').replace('\\', '_')
+                for fmt, fpath in label.get('files', {}).items():
+                    if Path(fpath).exists():
+                        zf.write(fpath, f"labels/{sku_safe}/{Path(fpath).name}")
+
+        logger.info(f"[Hybrid Fallback] Generated {len(labels)} labels, {len(errors)} errors")
+
+        background_results[job_id] = {
+            'success': True,
+            'job_id': job_id,
+            'total': len(labels),
+            'errors': len(errors),
+            'error_details': errors[:10],
+            'labels': labels,
+            'zip_file': zip_filename
+        }
+
+        progress_tracker.set(tracking_id, {
+            'current': len(products),
+            'total': len(products),
+            'status': 'completed',
+            'message': f'Complete! Generated {len(labels)} labels',
+            'current_product': '',
+            'percentage': 100
+        })
+
+        logger.info(f"[Hybrid Fallback] Completed for job {job_id}")
+
+    except Exception as e:
+        logger.error(f"[Hybrid Fallback] Fatal error: {e}", exc_info=True)
+        background_results[job_id] = {
+            'success': False,
+            'error': str(e)
+        }
+        progress_tracker.set(tracking_id, {
+            'status': 'failed',
+            'message': str(e),
+            'percentage': 0
+        })
+
+
+def _find_ai_file_for_svg(svg_path: Path) -> Path:
+    """Find the original AI file corresponding to an SVG template.
+
+    SVG naming: ai_converter_{timestamp}_{name}_final.svg
+    AI naming:  ai_converter_{timestamp}_{name}.ai
+    """
+    svg_name = svg_path.stem  # e.g., ai_converter_20260208_214411_100.YPB.100_final
+
+    # Try removing '_final' suffix
+    if svg_name.endswith('_final'):
+        ai_name = svg_name[:-6] + '.ai'
+        ai_path = svg_path.parent / ai_name
+        if ai_path.exists():
+            return ai_path
+
+    # Try the combined template pattern: combined_template_{ts}_{original_name}
+    # The original name might contain the AI filename
+    import re
+    m = re.search(r'(ai_converter_\d+_\d+_.+?)(?:_final)?$', svg_name)
+    if m:
+        ai_name = m.group(1) + '.ai'
+        ai_path = svg_path.parent / ai_name
+        if ai_path.exists():
+            return ai_path
+
+    # Search in uploads directory for any AI file
+    if svg_path.parent.exists():
+        ai_files = sorted(svg_path.parent.glob('ai_converter_*.ai'), key=lambda p: p.stat().st_mtime, reverse=True)
+        if ai_files:
+            return ai_files[0]
+
+    # Also check config.UPLOAD_DIR
+    try:
+        ai_files = sorted(config.UPLOAD_DIR.glob('ai_converter_*.ai'), key=lambda p: p.stat().st_mtime, reverse=True)
+        if ai_files:
+            return ai_files[0]
+    except Exception:
+        pass
+
+    return None
+
+
+@run_in_background
+def _generate_labels_task(
+    job_id,
+    tracking_id,
+    template_path,
+    products,
+    text_areas,
+    output_dir,
+    text_alignments=None,
+    fallback_png_path=None,
+    extracted_info=None,
+    force_svg_fallback=False
+):
+    """Background task for generating labels - runs in separate thread.
+
+    If fallback is requested, uses SVG position-based replacement fallback.
+    Otherwise uses normal SVG-based label generation.
+    """
+    logger.info(f"🔍 DEBUG: _generate_labels_task received extracted_info = {extracted_info}")
+
+    if text_alignments is None:
+        text_alignments = {}
+
+    fallback_requested = bool(force_svg_fallback)
+    if fallback_png_path:
+        png_exists = Path(fallback_png_path).exists()
+        fallback_requested = fallback_requested or png_exists
+        if fallback_requested and not png_exists:
+            logger.warning(f"[SVG Fallback] fallback_png_path provided but file is missing: {fallback_png_path}")
+
+    # Check if fallback mode (garbled text - use SVG position-based replacement).
+    if fallback_requested:
+        logger.info(f"[SVG Fallback] Activated. force={force_svg_fallback}, png={fallback_png_path}")
+        logger.info(f"[SVG Fallback] Template SVG: {template_path}")
+        _generate_labels_svg_fallback(job_id, tracking_id, template_path, products, text_areas, output_dir, text_alignments, extracted_info)
+        return
+
     try:
         labels = []
         errors = []
@@ -3463,6 +3728,18 @@ def _generate_labels_task(job_id, tracking_id, template_path, products, text_are
             'current_product': '',
             'percentage': 0
         })
+
+        # Ensure SVG has data-placeholder tags (needed for BatchProcessor/TemplateParser).
+        # When text_areas are provided from the UI, tag SVG elements by position.
+        if text_areas and isinstance(text_areas, dict) and any(isinstance(v, dict) for v in text_areas.values()):
+            try:
+                from template_parser import TemplateParser
+                parser = TemplateParser(Path(template_path))
+                placeholders = parser.parse_by_position(text_areas)
+                if placeholders:
+                    logger.info(f"Tagged {len(placeholders)} placeholders by position: {list(placeholders.keys())}")
+            except Exception as tag_err:
+                logger.warning(f"Position tagging failed (will try normal parse): {tag_err}")
 
         # Generate labels for each product
         for i, product in enumerate(products):
@@ -3819,8 +4096,56 @@ def generate_labels_combined():
         output_dir = config.OUTPUT_DIR / f"labels_{job_id}"
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Check if SVG has garbled text - if so, use SVG position-based fallback
+        fallback_png_path = None
+        force_svg_fallback = False
+
+        # First check if frontend explicitly passed the fallback PNG path
+        fallback_png_param = request.form.get('fallbackPngPath')
+        if fallback_png_param:
+            safe_fallback_name = secure_filename(Path(fallback_png_param).name)
+            candidate = config.UPLOAD_DIR / safe_fallback_name
+            if candidate.exists():
+                fallback_png_path = candidate
+                force_svg_fallback = True
+                logger.info(f"🔴 Garbled text mode - fallback PNG: {fallback_png_path}")
+            else:
+                logger.warning(f"Frontend fallback PNG not found: {candidate}")
+
+        # Auto-detect garbled text or explicit fallback request
+        # Normal pipeline now works with fontconfig aliases (Gotham→Montserrat etc.)
+
+        # Also check for garbled text in SVG content
+        if not force_svg_fallback:
+            try:
+                with open(template_path, 'r', encoding='utf-8') as f:
+                    svg_content = f.read()
+                garbled_count = svg_content.count('�')
+                if garbled_count >= 3:
+                    force_svg_fallback = True
+                    logger.warning(f"🔴 Detected garbled text in SVG ({garbled_count} chars) - activating SVG fallback")
+            except Exception as e:
+                logger.error(f"Error checking for garbled text: {e}")
+
+        # Get extracted info from frontend (original text from first OCR)
+        extracted_info_str = request.form.get('extractedInfo')
+        logger.info(f"🔍 DEBUG: extractedInfo_str from request.form = {extracted_info_str}")
+        extracted_info = json.loads(extracted_info_str) if extracted_info_str else None
+        logger.info(f"🔍 DEBUG: extracted_info after parsing = {extracted_info}")
+
         # Start background task (non-blocking)
-        _generate_labels_task(job_id, tracking_id, template_path, products, text_areas, output_dir, text_alignments)
+        _generate_labels_task(
+            job_id,
+            tracking_id,
+            template_path,
+            products,
+            text_areas,
+            output_dir,
+            text_alignments,
+            fallback_png_path=str(fallback_png_path) if fallback_png_path else None,
+            extracted_info=extracted_info,
+            force_svg_fallback=force_svg_fallback
+        )
 
         # Return immediately with job_id
         # #region agent log
@@ -3913,9 +4238,10 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
             'current': 0,
             'total': len(labels),
             'status': 'processing',
-            'message': 'Starting parallel mockup generation...',
+            'message': 'Preparing vial image...',
             'current_product': '',
-            'percentage': 0
+            'percentage': 0,
+            'phase': 'preparing'
         })
 
         # Thread-safe counters
@@ -3947,9 +4273,10 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                         'current': current,
                         'total': len(labels),
                         'status': 'processing',
-                        'message': f'Generating {product_name} ({sku})',
+                        'message': f'Sending to AI: {product_name} ({sku})',
                         'current_product': product_name,
-                        'percentage': int((current / len(labels)) * 100)
+                        'percentage': int((current / len(labels)) * 100),
+                        'phase': 'generating'
                     })
 
                 # Load label image
@@ -4027,13 +4354,19 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                 with progress_lock:
                     completed_count[0] += 1
                     current = completed_count[0]
+                    remaining = len(labels) - current
+                    if remaining > 0:
+                        msg = f'Completed {current}/{len(labels)} mockups ({remaining} remaining)'
+                    else:
+                        msg = f'All {len(labels)} mockups generated! Creating ZIP...'
                     progress_tracker.set(tracking_id, {
                         'current': current,
                         'total': len(labels),
                         'status': 'processing',
-                        'message': f'Generated {current}/{len(labels)} mockups',
+                        'message': msg,
                         'current_product': product_name,
-                        'percentage': int((current / len(labels)) * 100)
+                        'percentage': int((current / len(labels)) * 100),
+                        'phase': 'generating'
                     })
 
                 return {
@@ -4053,6 +4386,17 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
         # Process in parallel
         mockups = []
         errors = []
+
+        # Update progress before starting parallel work
+        progress_tracker.set(tracking_id, {
+            'current': 0,
+            'total': len(labels),
+            'status': 'processing',
+            'message': f'Starting AI generation for {len(labels)} mockups...',
+            'current_product': '',
+            'percentage': 0,
+            'phase': 'generating'
+        })
 
         # Use 6 workers for Railway paid plan (8 CPU/8GB RAM)
         # Leaves 2 cores for main process and background tasks
@@ -4734,30 +5078,41 @@ def list_archive():
 def delete_archive_item():
     """Delete an archived result"""
     try:
-        data = request.json
-        job_id = data.get('job_id')
-        item_type = data.get('type')
-        
+        data = request.json or {}
+        job_id = str(data.get('job_id', '')).strip()
+        item_type = str(data.get('type', '')).strip()
+
         if not job_id or not item_type:
             return jsonify({'error': 'Missing job_id or type'}), 400
-        
+
+        if item_type not in {'labels', 'mockups'}:
+            return jsonify({'error': 'Invalid archive type'}), 400
+
+        # Limit allowed characters to prevent traversal tricks.
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', job_id):
+            return jsonify({'error': 'Invalid job_id format'}), 400
+
         # Construct folder name
         folder_name = f"{item_type}_{job_id}"
-        folder_path = config.OUTPUT_DIR / folder_name
-        
-        if not folder_path.exists():
+        folder_path = (config.OUTPUT_DIR / folder_name).resolve()
+        output_root = config.OUTPUT_DIR.resolve()
+
+        if not _is_path_within_directory(folder_path, output_root):
+            return jsonify({'error': 'Invalid archive path'}), 400
+
+        if not folder_path.exists() or not folder_path.is_dir():
             return jsonify({'error': 'Archive item not found'}), 404
-        
+
         # Delete folder and all contents
         import shutil
         shutil.rmtree(folder_path)
         logger.info(f"Deleted archive item: {folder_name}")
-        
+
         return jsonify({
             'success': True,
             'message': f'Deleted {folder_name}'
         })
-        
+
     except Exception as e:
         logger.error(f"Error deleting archive item: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
@@ -4881,21 +5236,28 @@ def save_api_key():
 def test_api_key():
     """Test if API key is valid by making a simple API call."""
     try:
-        data = request.json
+        data = request.json or {}
         api_key = data.get('api_key', '').strip()
-        
+
         if not api_key:
             return jsonify({'error': 'API key is required'}), 400
-        
-        # Try to initialize Gemini with the provided key
-        import google.generativeai as genai
-        
-        genai.configure(api_key=api_key)
-        
-        # Try to list models as a simple test
+
+        # Use the google-genai SDK used by the rest of this codebase.
+        from google import genai
+
+        client = genai.Client(api_key=api_key)
+
+        # Trigger a lightweight API call to validate key and permissions.
         try:
-            models = genai.list_models()
-            # If we get here, the API key is valid
+            models_iter = client.models.list()
+            first_model = next(iter(models_iter), None)
+
+            if first_model is None:
+                return jsonify({
+                    'success': False,
+                    'error': 'API key is valid, but no models are available for this account.'
+                }), 400
+
             return jsonify({
                 'success': True,
                 'message': 'API key is valid and working'
@@ -4906,7 +5268,7 @@ def test_api_key():
                 'success': False,
                 'error': f'API key is invalid or has insufficient permissions: {str(api_error)}'
             }), 400
-        
+
     except Exception as e:
         logger.error(f"Error testing API key: {e}")
         return jsonify({'error': str(e)}), 500
@@ -5111,6 +5473,127 @@ def extract_svg_text_info(svg_path: Path) -> dict:
             'ingredients': '',
             'has_research_use_only': False
         }
+
+
+def _add_gemini_placeholders_to_svg(svg_content: str, field_boxes: dict, extracted_info: dict) -> str:
+    """
+    Add data-placeholder attributes to SVG based on Gemini-detected field boxes.
+
+    This is used when PyMuPDF extracts garbled text but we have Gemini OCR results.
+    We match text elements by position to the Gemini-detected boxes.
+
+    Args:
+        svg_content: SVG content string
+        field_boxes: Dict from Gemini with field positions
+            {'Product Name': {'x': 100, 'y': 200, 'width': 300, 'height': 50}, ...}
+        extracted_info: Dict with sku from Gemini OCR
+
+    Returns:
+        Updated SVG content with data-placeholder attributes
+    """
+    import re
+
+    try:
+        # Find all <text> elements with their positions
+        # Pattern: <text x="..." y="..." ...>content</text>
+        text_pattern = r'<text[^>]*\bx="([^"]*)"[^>]*\by="([^"]*)"[^>]*>([^<]*)</text>'
+
+        # Also handle transformed text elements
+        transform_pattern = r'<text[^>]*transform="[^"]*matrix\([^,]+,[^,]+,[^,]+,[^,]+,([^,]+),([^)]+)\)"[^>]*>([^<]*)</text>'
+
+        def get_position_from_match(match, pattern_type='xy'):
+            """Extract x, y position from match."""
+            if pattern_type == 'xy':
+                return float(match.group(1)), float(match.group(2))
+            else:  # transform matrix
+                return float(match.group(1)), float(match.group(2))
+
+        def position_in_box(x, y, box):
+            """Check if position (x, y) is within the box bounds (with margin)."""
+            margin = 50  # Allow some margin for font rendering differences
+            return (box['x'] - margin <= x <= box['x'] + box['width'] + margin and
+                    box['y'] - margin <= y <= box['y'] + box['height'] + margin)
+
+        # Process each field box from Gemini
+        result = svg_content
+
+        for field_name, box in field_boxes.items():
+            if box.get('width', 0) <= 0:
+                continue
+
+            # Determine placeholder name
+            placeholder_map = {
+                'Product Name': 'product_name',
+                'Product': 'product_name',
+                'Ingredients': 'ingredients',
+                'SKU': 'sku'
+            }
+            placeholder = placeholder_map.get(field_name, field_name.lower().replace(' ', '_'))
+
+            # Find text elements in this box region and add placeholder
+            def add_placeholder_if_in_box(match):
+                full_match = match.group(0)
+
+                # Skip if already has data-placeholder
+                if 'data-placeholder=' in full_match:
+                    return full_match
+
+                # Try to get position from x,y attributes
+                x_match = re.search(r'\bx="([^"]*)"', full_match)
+                y_match = re.search(r'\by="([^"]*)"', full_match)
+
+                if x_match and y_match:
+                    try:
+                        x = float(x_match.group(1))
+                        y = float(y_match.group(1))
+
+                        if position_in_box(x, y, box):
+                            logger.info(f"Gemini: Adding data-placeholder='{placeholder}' at ({x}, {y})")
+                            return full_match.replace('<text ', f'<text data-placeholder="{placeholder}" ', 1)
+                    except ValueError:
+                        pass
+
+                # Try transform matrix
+                transform_match = re.search(r'transform="[^"]*matrix\([^,]+,[^,]+,[^,]+,[^,]+,([^,]+),([^)]+)\)"', full_match)
+                if transform_match:
+                    try:
+                        x = float(transform_match.group(1))
+                        y = float(transform_match.group(2))
+
+                        if position_in_box(x, y, box):
+                            logger.info(f"Gemini: Adding data-placeholder='{placeholder}' at ({x}, {y}) [transform]")
+                            return full_match.replace('<text ', f'<text data-placeholder="{placeholder}" ', 1)
+                    except ValueError:
+                        pass
+
+                return full_match
+
+            # Apply to all text elements
+            result = re.sub(r'<text[^>]*>[^<]*</text>', add_placeholder_if_in_box, result)
+
+        # Also add SKU placeholder if we have SKU from OCR
+        sku = extracted_info.get('sku', '')
+        if sku:
+            # Find text containing the SKU pattern (YPB.XXX)
+            def add_sku_placeholder(match):
+                full_match = match.group(0)
+                if 'data-placeholder=' in full_match:
+                    return full_match
+                # SKU is usually small text at bottom - we'll match by position later
+                # For now, just mark any text element that doesn't have a placeholder yet
+                return full_match
+
+            result = re.sub(r'<text[^>]*>[^<]*</text>', add_sku_placeholder, result)
+
+        # Count what we added
+        placeholder_count = len(re.findall(r'data-placeholder="([^"]*)"', result))
+        logger.info(f"Gemini placeholders added: {placeholder_count}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error adding Gemini placeholders: {e}", exc_info=True)
+        return svg_content
 
 
 def add_data_placeholders_to_svg_text(svg_path: Path, extracted_info: dict) -> str:
@@ -5378,8 +5861,101 @@ def convert_ai_to_svg():
         # Convert WITH EDITABLE TEXT (text_to_path=False) at 675 DPI
         logger.info("Converting AI to SVG with editable text elements at 675 DPI...")
         svg_path_final = ai_path.with_name(ai_path.stem + '_final.svg')
-        svg_path_final = converter.convert_to_svg(ai_path, output_path=svg_path_final, text_to_path=False, dpi=675)
+        svg_path_final, metadata = converter.convert_to_svg(
+            ai_path,
+            output_path=svg_path_final,
+            text_to_path=False,
+            dpi=675,
+            return_metadata=True
+        )
 
+        # Check if Gemini fallback is needed (transparent to user!)
+        if metadata.get('fallback_needed'):
+            logger.warning("🔴 PyMuPDF text extraction failed - activating Gemini Vision OCR fallback (transparent)")
+
+            # Render AI to PNG for OCR and preview
+            png_path = converter.render_ai_to_png(ai_path, dpi=675)
+
+            # Copy PNG to uploads for preview (keep it!)
+            preview_png_name = f"preview_{timestamp}_{filename.replace('.ai', '.png')}"
+            preview_png_path = config.UPLOAD_DIR / preview_png_name
+            import shutil
+            shutil.copy(png_path, preview_png_path)
+            logger.info(f"✓ Preview PNG saved: {preview_png_path}")
+
+            # Gemini OCR - ONE CALL: extract SKU, Research Use Only, and ALL TEXT
+            from gemini_ocr import GeminiOCR
+            ocr = GeminiOCR(config.GEMINI_API_KEY)
+
+            ocr_result = ocr.extract_sku_and_research(png_path)
+            logger.info(f"Gemini OCR: SKU='{ocr_result.get('sku')}', Research={ocr_result.get('has_research_use_only')}")
+
+            # Extract original Product Name and Ingredients (needed for Gemini prompt)
+            product_info = ocr.extract_product_info(png_path)
+            logger.info(f"Gemini OCR: Product='{product_info.get('product_name')}', Ingredients='{product_info.get('ingredients', '')[:50]}...'")
+
+            # Clean up temp PNG (keep preview copy)
+            try:
+                png_path.unlink()
+            except:
+                pass
+
+            # Read the SVG content
+            with open(svg_path_final, 'r', encoding='utf-8') as f:
+                svg_content = f.read()
+
+            # Create extracted_info with ALL original values for the Gemini prompt
+            extracted_info = {
+                'sku': ocr_result.get('sku', ''),
+                'has_research_use_only': ocr_result.get('has_research_use_only', False),
+                'svg_text': ocr_result.get('all_text', ''),
+                'product_name': product_info.get('product_name', ''),
+                'ingredients': product_info.get('ingredients', ''),
+                'gemini_fallback': True,
+                'preview_png': preview_png_name
+            }
+
+            # Validate against database by SKU
+            validation_result = {
+                'validated': False,
+                'matched_product': None,
+                'sku_found': bool(extracted_info.get('sku'))
+            }
+
+            # Try to match with database by SKU
+            csv_path = Path(get_current_database())
+            if csv_path.exists() and extracted_info.get('sku'):
+                csv_manager = CSVManager(csv_path)
+                products = csv_manager.read_all()
+                extracted_sku = extracted_info.get('sku', '').strip()
+
+                for product in products:
+                    product_sku = product.get('SKU', '').strip()
+                    if product_sku and (extracted_sku.upper() in product_sku.upper() or product_sku.upper() in extracted_sku.upper()):
+                        validation_result['validated'] = True
+                        validation_result['matched_product'] = product
+                        logger.info(f"✓ Gemini+DB validation PASSED: Found {product_sku} - {product.get('Product')}")
+                        break
+
+            logger.info(f"✓ Gemini fallback complete: SKU={extracted_info.get('sku')}")
+
+            # Keep AI file - needed for hybrid fallback label generation
+            logger.info(f"Keeping AI file for hybrid fallback: {ai_path}")
+
+            # Return SAME FORMAT as normal flow (transparent to frontend!)
+            # Include preview_png for showing PNG instead of broken SVG
+            # User will set areas manually
+            return jsonify({
+                'success': True,
+                'fallback_used': False,  # Transparent to frontend
+                'svg_content': svg_content,
+                'svg_path': str(svg_path_final.name),
+                'preview_png': preview_png_name,  # Frontend shows PNG for drawing areas
+                'extracted_info': extracted_info,
+                'validation': validation_result
+            })
+
+        # Normal flow (no fallback needed)
         # Extract text information
         extracted_info = extract_svg_text_info(svg_path_final)
         logger.info(f"Extracted info: {extracted_info}")
@@ -5452,6 +6028,7 @@ def convert_ai_to_svg():
         # #endregion
         return jsonify({
             'success': True,
+            'fallback_used': False,
             'svg_content': svg_content_with_placeholders,
             'svg_path': str(svg_path_final.name),
             'extracted_info': extracted_info,

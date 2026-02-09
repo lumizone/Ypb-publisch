@@ -185,6 +185,11 @@ class TextReplacer:
         else:
             display_value = new_text
 
+        # Remove additional elements from the same detected placeholder area.
+        # This is required for fallback templates where one logical field spans
+        # multiple original text nodes.
+        self._remove_secondary_area_elements(element, placeholder_name)
+
         # For elements WITHOUT user_area - replace text, preserve position/style
         if not user_area:
             logger.info(f"{placeholder_name}: no user_area, preserving position/style, replacing with: {display_value[:50]}...")
@@ -215,7 +220,7 @@ class TextReplacer:
 
         # Use TextFormatter to find optimal layout - it handles all the fitting logic
         formatted = self.formatter.format_text(
-            text=new_text,
+            text=display_value,
             placeholder_info=placeholder_info,
             max_width=area_width,
             max_height=area_height,
@@ -316,7 +321,32 @@ class TextReplacer:
             logger.info(f"Created {len(lines)} tspans for multi-line text")
         else:
             # Single line text
-            element.text = lines[0] if lines else new_text
+            element.text = lines[0] if lines else display_value
+
+    def _remove_secondary_area_elements(self, primary_element, placeholder_name: str):
+        """Remove extra elements tagged for the same placeholder area."""
+        try:
+            root = primary_element.getroottree().getroot()
+            secondary_xpath = f".//*[@data-placeholder-secondary='{placeholder_name}']"
+            secondary_elements = root.findall(secondary_xpath)
+            if not secondary_elements:
+                return
+
+            parent_map = {c: p for p in root.iter() for c in p}
+            removed = 0
+            for secondary in secondary_elements:
+                if secondary is primary_element:
+                    continue
+                parent = parent_map.get(secondary)
+                if parent is None:
+                    continue
+                parent.remove(secondary)
+                removed += 1
+
+            if removed:
+                logger.info(f"{placeholder_name}: removed {removed} secondary text elements from same area")
+        except Exception as e:
+            logger.warning(f"{placeholder_name}: failed to remove secondary elements: {e}")
     
     def _parse_transform_matrix(self, transform_str: str):
         """Parse SVG transform attribute and return scale and translate values."""

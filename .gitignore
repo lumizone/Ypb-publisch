@@ -58,6 +58,12 @@ debug.log
 *.zip
 *.tar.gz
 
+# Fonts (downloaded at runtime/build time, too large for git)
+fonts/
+
+# Test output directories
+test_results_*/
+
 # Backup files
 backup_settings/
 *.bak

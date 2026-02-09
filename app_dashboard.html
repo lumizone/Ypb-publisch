@@ -2746,6 +2746,17 @@
         let rectStartXCombined = 0, rectStartYCombined = 0, rectStartWidthCombined = 0, rectStartHeightCombined = 0;
         let resizeHandleCombined = null;
         let convertedSVGDataCombined = null; // Store converted AI->SVG data
+
+        // PNG canvas drawing variables for Combined (Gemini fallback)
+        let pngPreviewScaleCombined = 1;
+        let pngViewBoxCombined = null;
+        let pngCanvasDrawingCombined = {
+            isDrawing: false,
+            startX: 0,
+            startY: 0,
+            currentX: 0,
+            currentY: 0
+        };
         
         // Label selection/crop variables for Combined Generator
         let labelSelectionAreaCombined = null;
@@ -3759,6 +3770,17 @@
         let rectStartX = 0, rectStartY = 0, rectStartWidth = 0, rectStartHeight = 0;
         let resizeHandle = null;
 
+        // PNG canvas drawing variables (for Gemini fallback)
+        let pngPreviewScale = 1;
+        let pngViewBox = null;
+        let pngCanvasDrawing = {
+            isDrawing: false,
+            startX: 0,
+            startY: 0,
+            currentX: 0,
+            currentY: 0
+        };
+
         // Template preview function
         async function previewTemplate(input) {
             const previewCard = document.getElementById('templatePreviewCard');
@@ -3789,28 +3811,28 @@
                         });
                         
                         const result = await response.json();
-                        
+
                         if (!response.ok || !result.success) {
                             throw new Error(result.error || 'Conversion failed');
                         }
-                        
-                        // Store converted SVG data
+
+                        // Store converted SVG data (and preview_png if Gemini fallback was used)
                         convertedSVGDataGenerate = {
                             svgContent: result.svg_content,
                             svgFilename: result.svg_path || 'converted.svg',
-                            extractedInfo: result.extracted_info
+                            extractedInfo: result.extracted_info,
+                            previewPng: result.preview_png || null  // PNG for preview if Gemini fallback
                         };
 
                         console.log('DEBUG: Extracted info from backend:', result.extracted_info);
-                        console.log('DEBUG: svg_text:', result.extracted_info?.svg_text);
-                        console.log('DEBUG: validation:', result.validation);
+                        console.log('DEBUG: preview_png:', result.preview_png);
 
                         // Show analysis card with full validation
-                        await showAIAnalysisGenerate(result.extracted_info);
+                        await showAIAnalysisGenerate(result.extracted_info, result.preview_png);
                         aiAnalysisCard.style.display = 'block';
                         previewText.style.display = 'none';
                         previewCard.style.display = 'none';
-                        
+
                         // Scroll to analysis
                         aiAnalysisCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                         
@@ -3903,11 +3925,11 @@
         }
         
         // Show AI analysis results for Generate Labels page
-        async function showAIAnalysisGenerate(extractedInfo) {
+        async function showAIAnalysisGenerate(extractedInfo, previewPng = null) {
             // Step 1: Show SKU
             const skuEl = document.getElementById('aiSkuDetectedGenerate');
             skuEl.textContent = extractedInfo.sku || 'Not found';
-            
+
             // Step 2: Research Use Only
             const researchDiv = document.getElementById('aiResearchUseDivGenerate');
             if (extractedInfo.has_research_use_only) {
@@ -3915,7 +3937,7 @@
             } else {
                 researchDiv.style.display = 'none';
             }
-            
+
             // Step 3: Database validation - fetch product from database by SKU
             let dbProduct = null;
             if (extractedInfo.sku) {
@@ -3930,50 +3952,45 @@
                     console.error('Error fetching from database:', e);
                 }
             }
-            
-            const finalSvgText = extractedInfo.svg_text || '';
-            
-            // Compare product name
+
+            // Get full SVG text for searching (all text from label)
+            const fullSvgText = extractedInfo.svg_text || '';
+
+            // Compare product name - search for DATABASE value in label text
             const dbProductName = dbProduct?.Product || 'Not found in database';
             let productNameMatch = false;
-            let labelProductName = 'Not found';
-            
-            if (dbProduct && dbProduct.Product && finalSvgText) {
-                productNameMatch = finalSvgText.toLowerCase().includes(dbProduct.Product.toLowerCase());
-                if (productNameMatch) {
-                    labelProductName = dbProduct.Product + ' ✓';
-                }
+
+            if (dbProduct && dbProduct.Product && fullSvgText) {
+                // Search for database Product Name in the full label text
+                productNameMatch = fullSvgText.toLowerCase().includes(dbProduct.Product.toLowerCase());
             }
-            
+
             document.getElementById('aiProductNameDbGenerate').textContent = dbProductName;
             const productMatchEl = document.getElementById('aiProductNameMatchGenerate');
             productMatchEl.innerHTML = `
                 <span style="margin-right: 4px; color: ${productNameMatch ? '#27ae60' : '#eb5757'};">${productNameMatch ? '✓' : '✗'}</span>
                 <span>Found in Label:</span>
-                <span style="margin-left: 4px;">${labelProductName}</span>
+                <span style="margin-left: 4px;">${productNameMatch ? dbProductName + ' ✓' : 'Not found'}</span>
             `;
             productMatchEl.style.color = productNameMatch ? '#27ae60' : '#eb5757';
-            
-            // Compare ingredients
+
+            // Compare ingredients - search for DATABASE value in label text
             const dbIngredients = dbProduct?.Ingredients || 'Not found in database';
             let ingredientsMatch = false;
-            let labelIngredients = 'Not found';
-            
-            if (dbProduct && dbProduct.Ingredients && finalSvgText) {
+
+            if (dbProduct && dbProduct.Ingredients && fullSvgText) {
+                // Search for database Ingredients in the full label text
                 const dbIngrNormalized = dbProduct.Ingredients.toLowerCase().replace(/\s+/g, '');
-                const finalSvgNormalized = finalSvgText.toLowerCase().replace(/\s+/g, '');
-                ingredientsMatch = finalSvgNormalized.includes(dbIngrNormalized);
-                if (ingredientsMatch) {
-                    labelIngredients = dbProduct.Ingredients + ' ✓';
-                }
+                const fullSvgNormalized = fullSvgText.toLowerCase().replace(/\s+/g, '');
+                ingredientsMatch = fullSvgNormalized.includes(dbIngrNormalized);
             }
-            
+
             document.getElementById('aiIngredientsDbGenerate').textContent = dbIngredients;
             const ingredientsMatchEl = document.getElementById('aiIngredientsMatchGenerate');
             ingredientsMatchEl.innerHTML = `
                 <span style="margin-right: 4px; color: ${ingredientsMatch ? '#27ae60' : '#eb5757'};">${ingredientsMatch ? '✓' : '✗'}</span>
                 <span>Found in Label:</span>
-                <span style="margin-left: 4px;">${labelIngredients}</span>
+                <span style="margin-left: 4px;">${ingredientsMatch ? dbIngredients + ' ✓' : 'Not found'}</span>
             `;
             ingredientsMatchEl.style.color = ingredientsMatch ? '#27ae60' : '#eb5757';
         }
@@ -3984,20 +4001,76 @@
                 showNotification('No converted SVG data available', 'error');
                 return;
             }
-            
+
             const previewCard = document.getElementById('templatePreviewCard');
             const svgContainer = document.getElementById('svgContainer');
             const previewText = document.getElementById('templatePreviewText');
             const aiAnalysisCard = document.getElementById('aiAnalysisCardGenerate');
-            
+
             // Hide analysis, show preview
             aiAnalysisCard.style.display = 'none';
-            
-            // Process SVG content
+
+            // Clear container
             svgContainer.innerHTML = '';
             textAreas = { product_name: null, ingredients: null };
             updateAreaInfo();
-            
+
+            // Check if we have PNG preview (Gemini fallback case)
+            if (convertedSVGDataGenerate.previewPng) {
+                // Create wrapper for PNG + SVG overlay (use SVG for areas like normal flow)
+                const wrapper = document.createElement('div');
+                wrapper.style.position = 'relative';
+                wrapper.style.display = 'inline-block';
+
+                // Show PNG image
+                const imgElement = document.createElement('img');
+                imgElement.src = `/uploads/${convertedSVGDataGenerate.previewPng}`;
+                imgElement.style.maxWidth = '100%';
+                imgElement.style.height = 'auto';
+                imgElement.style.display = 'block';
+                imgElement.alt = 'Label Preview';
+
+                // When image loads, create SVG overlay with same dimensions
+                imgElement.onload = function() {
+                    const imgWidth = imgElement.naturalWidth;
+                    const imgHeight = imgElement.naturalHeight;
+
+                    // Create SVG overlay (same technique as normal SVG flow)
+                    const svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svgOverlay.setAttribute('width', imgElement.offsetWidth);
+                    svgOverlay.setAttribute('height', imgElement.offsetHeight);
+                    svgOverlay.setAttribute('viewBox', `0 0 ${imgWidth} ${imgHeight}`);
+                    svgOverlay.style.position = 'absolute';
+                    svgOverlay.style.top = '0';
+                    svgOverlay.style.left = '0';
+                    svgOverlay.style.pointerEvents = 'auto';
+                    svgOverlay.style.cursor = 'default';
+
+                    wrapper.appendChild(svgOverlay);
+
+                    // Store as svgElement so all existing area logic works
+                    // (createRectForArea, addResizeHandles, drag/resize handlers will work on this SVG)
+                    svgElement = svgOverlay;
+                    svgViewBox = { x: 0, y: 0, width: imgWidth, height: imgHeight };
+
+                    console.log('PNG loaded with SVG overlay:', imgWidth, 'x', imgHeight);
+                    console.log('svgElement and svgViewBox set - areas will work like normal SVG');
+                };
+
+                wrapper.appendChild(imgElement);
+                svgContainer.appendChild(wrapper);
+
+                previewText.style.display = 'none';
+                previewCard.style.display = 'block';
+
+                console.log('Showing PNG preview with SVG overlay:', convertedSVGDataGenerate.previewPng);
+
+                // Scroll to preview
+                previewCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            }
+
+            // Normal SVG flow
             const svgDiv = document.createElement('div');
             svgDiv.innerHTML = convertedSVGDataGenerate.svgContent;
             svgElement = svgDiv.querySelector('svg');
@@ -4494,7 +4567,167 @@
                 console.error('Error loading saved areas:', error);
             }
         }
-        
+
+        // Setup PNG canvas drawing for Gemini fallback mode
+        function setupPngCanvasDrawing(canvas, mode) {
+            const ctx = canvas.getContext('2d');
+            const isCombined = mode === 'combined';
+            const areas = isCombined ? textAreasCombined : textAreas;
+            const drawingState = isCombined ? pngCanvasDrawingCombined : pngCanvasDrawing;
+            const scale = isCombined ? pngPreviewScaleCombined : pngPreviewScale;
+            const viewBox = isCombined ? pngViewBoxCombined : pngViewBox;
+
+            // Function to get current drawing mode
+            const getCurrentMode = () => isCombined ? currentDrawingModeCombined : currentDrawingMode;
+
+            // Function to redraw all areas on canvas
+            function redrawCanvas() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Draw existing areas
+                Object.keys(areas).forEach(areaMode => {
+                    const area = areas[areaMode];
+                    if (area) {
+                        const displayX = area.x / scale;
+                        const displayY = area.y / scale;
+                        const displayWidth = area.width / scale;
+                        const displayHeight = area.height / scale;
+
+                        // Fill
+                        ctx.fillStyle = areaMode === 'product_name' ? 'rgba(33, 150, 243, 0.2)' : 'rgba(76, 175, 80, 0.2)';
+                        ctx.fillRect(displayX, displayY, displayWidth, displayHeight);
+
+                        // Stroke
+                        ctx.strokeStyle = areaMode === 'product_name' ? '#2196F3' : '#4CAF50';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.strokeRect(displayX, displayY, displayWidth, displayHeight);
+                        ctx.setLineDash([]);
+
+                        // Label
+                        ctx.fillStyle = areaMode === 'product_name' ? '#2196F3' : '#4CAF50';
+                        ctx.font = '12px Arial';
+                        ctx.fillText(areaMode === 'product_name' ? 'Product Name' : 'Ingredients', displayX + 4, displayY + 14);
+                    }
+                });
+
+                // Draw current selection if drawing
+                if (drawingState.isDrawing && getCurrentMode()) {
+                    const x = Math.min(drawingState.startX, drawingState.currentX);
+                    const y = Math.min(drawingState.startY, drawingState.currentY);
+                    const width = Math.abs(drawingState.currentX - drawingState.startX);
+                    const height = Math.abs(drawingState.currentY - drawingState.startY);
+
+                    const currentMode = getCurrentMode();
+                    ctx.fillStyle = currentMode === 'product_name' ? 'rgba(33, 150, 243, 0.3)' : 'rgba(76, 175, 80, 0.3)';
+                    ctx.fillRect(x, y, width, height);
+                    ctx.strokeStyle = currentMode === 'product_name' ? '#2196F3' : '#4CAF50';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, width, height);
+                }
+            }
+
+            // Mouse down - start drawing
+            canvas.addEventListener('mousedown', function(e) {
+                const currentMode = getCurrentMode();
+                if (!currentMode) {
+                    console.log('No drawing mode selected. Click "Set Product Name Area" or "Set Ingredients Area" first.');
+                    return;
+                }
+
+                const rect = canvas.getBoundingClientRect();
+                drawingState.isDrawing = true;
+                drawingState.startX = e.clientX - rect.left;
+                drawingState.startY = e.clientY - rect.top;
+                drawingState.currentX = drawingState.startX;
+                drawingState.currentY = drawingState.startY;
+            });
+
+            // Mouse move - update selection rectangle
+            canvas.addEventListener('mousemove', function(e) {
+                if (!drawingState.isDrawing) return;
+
+                const rect = canvas.getBoundingClientRect();
+                drawingState.currentX = e.clientX - rect.left;
+                drawingState.currentY = e.clientY - rect.top;
+
+                redrawCanvas();
+            });
+
+            // Mouse up - finish drawing
+            canvas.addEventListener('mouseup', function(e) {
+                if (!drawingState.isDrawing) return;
+
+                const currentMode = getCurrentMode();
+                if (!currentMode) {
+                    drawingState.isDrawing = false;
+                    return;
+                }
+
+                const rect = canvas.getBoundingClientRect();
+                drawingState.currentX = e.clientX - rect.left;
+                drawingState.currentY = e.clientY - rect.top;
+
+                // Calculate final area in image coordinates (not display coordinates)
+                const x = Math.min(drawingState.startX, drawingState.currentX) * scale;
+                const y = Math.min(drawingState.startY, drawingState.currentY) * scale;
+                const width = Math.abs(drawingState.currentX - drawingState.startX) * scale;
+                const height = Math.abs(drawingState.currentY - drawingState.startY) * scale;
+
+                // Only save if area is big enough (at least 10px in display)
+                if (width / scale >= 10 && height / scale >= 10) {
+                    areas[currentMode] = { x, y, width, height };
+                    console.log(`Area set for ${currentMode}:`, areas[currentMode]);
+
+                    // Update UI
+                    if (isCombined) {
+                        updateAreaInfoCombined();
+                    } else {
+                        updateAreaInfo();
+                    }
+
+                    // Save areas
+                    if (isCombined) {
+                        saveAreasCombined();
+                    } else {
+                        saveAreas();
+                    }
+                }
+
+                drawingState.isDrawing = false;
+
+                // Reset drawing mode and button styles after successful draw
+                if (isCombined) {
+                    currentDrawingModeCombined = null;
+                    document.getElementById('btnSetProductNameCombined').style.background = '#e9e9e7';
+                    document.getElementById('btnSetProductNameCombined').style.color = '#37352f';
+                    document.getElementById('btnSetIngredientsCombined').style.background = '#e9e9e7';
+                    document.getElementById('btnSetIngredientsCombined').style.color = '#37352f';
+                } else {
+                    currentDrawingMode = null;
+                    document.getElementById('btnSetProductName').style.background = '#e9e9e7';
+                    document.getElementById('btnSetProductName').style.color = '#37352f';
+                    document.getElementById('btnSetIngredients').style.background = '#e9e9e7';
+                    document.getElementById('btnSetIngredients').style.color = '#37352f';
+                }
+
+                redrawCanvas();
+            });
+
+            // Mouse leave - cancel drawing
+            canvas.addEventListener('mouseleave', function(e) {
+                if (drawingState.isDrawing) {
+                    drawingState.isDrawing = false;
+                    redrawCanvas();
+                }
+            });
+
+            // Initial draw
+            redrawCanvas();
+
+            console.log('PNG canvas drawing setup complete for mode:', mode);
+        }
+
         // Load generated labels preview (only after generation)
         // Removed old showGeneratedLabels - now using displayGeneratedLabelsStandalone
         
@@ -4522,6 +4755,14 @@
             }
             formData.append('textAreas', JSON.stringify(textAreas));
             formData.append('textAlignments', JSON.stringify(textAlignmentsGenerate));
+            // Pass fallback PNG path if Gemini fallback was activated during AI conversion
+            if (convertedSVGDataGenerate && convertedSVGDataGenerate.previewPng) {
+                formData.append('fallbackPngPath', convertedSVGDataGenerate.previewPng);
+            }
+            // Pass extracted info from first OCR (original text from template)
+            if (convertedSVGDataGenerate && convertedSVGDataGenerate.extractedInfo) {
+                formData.append('extractedInfo', JSON.stringify(convertedSVGDataGenerate.extractedInfo));
+            }
 
             const submitBtn = document.getElementById('submitBtn');
             const progress = document.getElementById('progress');
@@ -5706,7 +5947,28 @@
             progress.style.display = 'block';
             progressFill.style.width = '10%';
             progressFill.classList.add('active');
-            progressText.textContent = 'Generating mockup with AI...';
+            progressText.textContent = 'Sending to AI... (this may take 20-40s)';
+
+            const singleMockupStart = Date.now();
+            const singleMockupTimer = setInterval(() => {
+                const sec = Math.floor((Date.now() - singleMockupStart) / 1000);
+                const phases = [
+                    { t: 0, msg: 'Sending to AI...' },
+                    { t: 5, msg: 'AI is generating mockup...' },
+                    { t: 15, msg: 'AI is processing image...' },
+                    { t: 30, msg: 'Almost done...' },
+                    { t: 60, msg: 'Still working (retrying if needed)...' }
+                ];
+                let phase = phases[0].msg;
+                for (const p of phases) {
+                    if (sec >= p.t) phase = p.msg;
+                }
+                const m = Math.floor(sec / 60);
+                const s = sec % 60;
+                const elapsed = m > 0 ? `${m}m ${s}s` : `${s}s`;
+                progressText.textContent = `${phase} (${elapsed} elapsed)`;
+                progressFill.style.width = Math.min(10 + sec * 1.5, 90) + '%';
+            }, 1000);
 
             try {
                 const response = await fetch('/api/generate-single-mockup', {
@@ -5714,6 +5976,7 @@
                     body: formData
                 });
 
+                clearInterval(singleMockupTimer);
                 const data = await response.json();
 
                 if (response.ok) {
@@ -5762,6 +6025,7 @@
                 }
 
             } catch (error) {
+                clearInterval(singleMockupTimer);
                 console.error('Error:', error);
                 progressFill.style.width = '100%';
                 progressFill.classList.remove('active');
@@ -5824,13 +6088,13 @@
         }
         
         // Show AI analysis results with database validation (same logic as Image Convertor)
-        async function showAIAnalysisCombined(extractedInfo) {
+        async function showAIAnalysisCombined(extractedInfo, previewPng = null) {
             // Step 1: Show SKU
             const skuEl = document.getElementById('aiSkuDetected');
             skuEl.innerHTML = `
                 <div style="font-size: 18px; color: #27ae60; font-weight: 600;">${extractedInfo.sku || 'Not found'}</div>
             `;
-            
+
             // Step 2: Research Use Only
             const researchDiv = document.getElementById('aiResearchUseDiv');
             if (extractedInfo.has_research_use_only) {
@@ -5838,7 +6102,7 @@
             } else {
                 researchDiv.style.display = 'none';
             }
-            
+
             // Step 3: Database validation - fetch product from database by SKU
             let dbProduct = null;
             if (extractedInfo.sku) {
@@ -5855,52 +6119,46 @@
                     console.error('Error fetching from database:', e);
                 }
             }
-            
-            // Get final SVG text (with text-to-path, from aria-labels)
-            const finalSvgText = extractedInfo.svg_text || '';
-            console.log('Final SVG text:', finalSvgText);
-            
-            // Compare product name
+
+            // Get full SVG text for searching (all text from label)
+            const fullSvgText = extractedInfo.svg_text || '';
+            console.log('Full SVG text for search:', fullSvgText);
+
+            // Compare product name - search for DATABASE value in label text
             const dbProductName = dbProduct?.Product || 'Not found in database';
             let productNameMatch = false;
-            let labelProductName = 'Not found in label';
-            
-            if (dbProduct && dbProduct.Product && finalSvgText) {
-                productNameMatch = finalSvgText.toLowerCase().includes(dbProduct.Product.toLowerCase());
-                if (productNameMatch) {
-                    labelProductName = dbProduct.Product + ' ✓';
-                }
+
+            if (dbProduct && dbProduct.Product && fullSvgText) {
+                // Search for database Product Name in the full label text
+                productNameMatch = fullSvgText.toLowerCase().includes(dbProduct.Product.toLowerCase());
             }
-            
+
             document.getElementById('aiProductNameDb').textContent = dbProductName;
             const productMatchEl = document.getElementById('aiProductNameMatch');
             productMatchEl.innerHTML = `
                 <span style="margin-right: 4px; color: ${productNameMatch ? '#4CAF50' : '#f44336'};">${productNameMatch ? '✓' : '✗'}</span>
                 <span>Found in Label:</span>
-                <span id="aiProductNameLabel" style="margin-left: 4px;">${labelProductName}</span>
+                <span id="aiProductNameLabel" style="margin-left: 4px;">${productNameMatch ? dbProductName + ' ✓' : 'Not found'}</span>
             `;
             productMatchEl.style.color = productNameMatch ? '#4CAF50' : '#f44336';
-            
-            // Compare ingredients
+
+            // Compare ingredients - search for DATABASE value in label text
             const dbIngredients = dbProduct?.Ingredients || 'Not found in database';
             let ingredientsMatch = false;
-            let labelIngredients = 'Not found in label';
-            
-            if (dbProduct && dbProduct.Ingredients && finalSvgText) {
+
+            if (dbProduct && dbProduct.Ingredients && fullSvgText) {
+                // Search for database Ingredients in the full label text
                 const dbIngrNormalized = dbProduct.Ingredients.toLowerCase().replace(/\s+/g, '');
-                const finalSvgNormalized = finalSvgText.toLowerCase().replace(/\s+/g, '');
-                ingredientsMatch = finalSvgNormalized.includes(dbIngrNormalized);
-                if (ingredientsMatch) {
-                    labelIngredients = dbProduct.Ingredients + ' ✓';
-                }
+                const fullSvgNormalized = fullSvgText.toLowerCase().replace(/\s+/g, '');
+                ingredientsMatch = fullSvgNormalized.includes(dbIngrNormalized);
             }
-            
+
             document.getElementById('aiIngredientsDb').textContent = dbIngredients;
             const ingredientsMatchEl = document.getElementById('aiIngredientsMatch');
             ingredientsMatchEl.innerHTML = `
                 <span style="margin-right: 4px; color: ${ingredientsMatch ? '#4CAF50' : '#f44336'};">${ingredientsMatch ? '✓' : '✗'}</span>
                 <span>Found in Label:</span>
-                <span id="aiIngredientsLabel" style="margin-left: 4px;">${labelIngredients}</span>
+                <span id="aiIngredientsLabel" style="margin-left: 4px;">${ingredientsMatch ? dbIngredients + ' ✓' : 'Not found'}</span>
             `;
             ingredientsMatchEl.style.color = ingredientsMatch ? '#4CAF50' : '#f44336';
         }
@@ -5911,20 +6169,80 @@
                 showNotification('No converted SVG data available', 'error');
                 return;
             }
-            
+
             const previewCard = document.getElementById('templatePreviewCardCombined');
             const svgContainer = document.getElementById('svgContainerCombined');
             const previewText = document.getElementById('templatePreviewTextCombined');
             const aiAnalysisCard = document.getElementById('aiAnalysisCardCombined');
-            
+
             // Hide analysis, show preview
             aiAnalysisCard.style.display = 'none';
-            
-            // Process SVG content
+
+            // Clear container
             svgContainer.innerHTML = '';
             textAreasCombined = { product_name: null, ingredients: null };
             updateAreaInfoCombined();
-            
+
+            // Check if we have PNG preview (Gemini fallback case)
+            if (convertedSVGDataCombined.previewPng) {
+                // Create wrapper for PNG + SVG overlay (use SVG for areas like normal flow)
+                const wrapper = document.createElement('div');
+                wrapper.style.position = 'relative';
+                wrapper.style.display = 'inline-block';
+
+                // Show PNG image
+                const imgElement = document.createElement('img');
+                imgElement.src = `/uploads/${convertedSVGDataCombined.previewPng}`;
+                imgElement.style.maxWidth = '100%';
+                imgElement.style.height = 'auto';
+                imgElement.style.display = 'block';
+                imgElement.alt = 'Label Preview';
+
+                // When image loads, create SVG overlay with same dimensions
+                imgElement.onload = async function() {
+                    const imgWidth = imgElement.naturalWidth;
+                    const imgHeight = imgElement.naturalHeight;
+
+                    // Create SVG overlay (same technique as normal SVG flow)
+                    const svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svgOverlay.setAttribute('width', imgElement.offsetWidth);
+                    svgOverlay.setAttribute('height', imgElement.offsetHeight);
+                    svgOverlay.setAttribute('viewBox', `0 0 ${imgWidth} ${imgHeight}`);
+                    svgOverlay.style.position = 'absolute';
+                    svgOverlay.style.top = '0';
+                    svgOverlay.style.left = '0';
+                    svgOverlay.style.pointerEvents = 'auto';
+                    svgOverlay.style.cursor = 'default';
+
+                    wrapper.appendChild(svgOverlay);
+
+                    // Store as svgElementCombined so all existing area logic works
+                    svgElementCombined = svgOverlay;
+                    svgViewBoxCombined = { x: 0, y: 0, width: imgWidth, height: imgHeight };
+
+                    console.log('PNG loaded (Combined) with SVG overlay:', imgWidth, 'x', imgHeight);
+                    console.log('svgElementCombined and svgViewBoxCombined set - areas will work like normal SVG');
+
+                    // Show label selection card
+                    const svgBlob = new Blob([convertedSVGDataCombined.svgContent], { type: 'image/svg+xml' });
+                    const svgFile = new File([svgBlob], convertedSVGDataCombined.svgFilename, { type: 'image/svg+xml' });
+                    await showLabelSelectionCombined(svgFile, convertedSVGDataCombined.svgContent);
+                };
+
+                wrapper.appendChild(imgElement);
+                svgContainer.appendChild(wrapper);
+
+                previewText.style.display = 'none';
+                previewCard.style.display = 'block';
+
+                console.log('Showing PNG preview with SVG overlay (Combined):', convertedSVGDataCombined.previewPng);
+
+                // Scroll to preview
+                previewCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            }
+
+            // Normal SVG flow
             const svgDiv = document.createElement('div');
             svgDiv.innerHTML = convertedSVGDataCombined.svgContent;
             svgElementCombined = svgDiv.querySelector('svg');
@@ -6009,20 +6327,23 @@
                         });
                         
                         const result = await response.json();
-                        
+
                         if (!response.ok || !result.success) {
                             throw new Error(result.error || 'Conversion failed');
                         }
-                        
-                        // Store converted SVG data
+
+                        // Store converted SVG data (and preview_png if Gemini fallback was used)
                         convertedSVGDataCombined = {
                             svgContent: result.svg_content,
                             svgFilename: result.svg_path || 'converted.svg',
-                            extractedInfo: result.extracted_info
+                            extractedInfo: result.extracted_info,
+                            previewPng: result.preview_png || null  // PNG for preview if Gemini fallback
                         };
-                        
+
+                        console.log('DEBUG Combined: preview_png:', result.preview_png);
+
                         // Show analysis card with full validation (same as Image Convertor)
-                        await showAIAnalysisCombined(result.extracted_info);
+                        await showAIAnalysisCombined(result.extracted_info, result.preview_png);
                         aiAnalysisCard.style.display = 'block';
                         previewText.style.display = 'none';
                         
@@ -7049,11 +7370,14 @@
                 if (response.ok && data.products) {
                     allProductsCombined = data.products;
 
-                    // Update database info
+                    // Update database info (elements may not exist in standalone tab)
                     const dbName = data.database || 'Unknown';
-                    document.getElementById('combinedGenDbName').textContent = dbName;
-                    document.getElementById('combinedGenProductCount').textContent = `(${data.products.length} products)`;
-                    document.getElementById('combinedGenDbInfo').style.display = 'block';
+                    const dbNameEl = document.getElementById('combinedGenDbName');
+                    const dbCountEl = document.getElementById('combinedGenProductCount');
+                    const dbInfoEl = document.getElementById('combinedGenDbInfo');
+                    if (dbNameEl) dbNameEl.textContent = dbName;
+                    if (dbCountEl) dbCountEl.textContent = `(${data.products.length} products)`;
+                    if (dbInfoEl) dbInfoEl.style.display = 'block';
 
                     return true;
                 } else {
@@ -7211,9 +7535,9 @@
             const labelsCard = document.getElementById('generatedLabelsCard');
             const mockupStepCard = document.getElementById('mockupStepCard');
 
-            // Validate
+            // Validate - check for uploaded file OR converted SVG data
             const templateInput = document.getElementById('templateCombined');
-            if (!templateInput.files || !templateInput.files[0]) {
+            if ((!templateInput.files || !templateInput.files[0]) && !convertedSVGDataCombined) {
                 status.textContent = 'Please upload a label template';
                 status.className = 'status error';
                 return;
@@ -7234,6 +7558,14 @@
 
             formData.append('textAreas', JSON.stringify(textAreasCombined));
             formData.append('textAlignments', JSON.stringify(textAlignmentsCombined));
+            // Pass fallback PNG path if Gemini fallback was activated during AI conversion
+            if (convertedSVGDataCombined && convertedSVGDataCombined.previewPng) {
+                formData.append('fallbackPngPath', convertedSVGDataCombined.previewPng);
+            }
+            // Pass extracted info from first OCR (original text from template)
+            if (convertedSVGDataCombined && convertedSVGDataCombined.extractedInfo) {
+                formData.append('extractedInfo', JSON.stringify(convertedSVGDataCombined.extractedInfo));
+            }
 
             // Product selection mode
             if (productSelectionMode === 'specific') {
@@ -7499,28 +7831,50 @@
             progress.style.display = 'block';
             progressFill.style.width = '5%';
             progressFill.classList.add('active');
-            progressText.textContent = 'Starting...';
+            progressText.textContent = 'Preparing mockup generation...';
             resultsCard.style.display = 'none';
 
             const mockupTrackingId = 'mockups_' + Date.now();
             formData.append('tracking_id', mockupTrackingId);
 
             let mockupJobId = null;
+            const mockupStartTime = Date.now();
+            let lastMockupCount = 0;
+
+            function formatElapsed(ms) {
+                const s = Math.floor(ms / 1000);
+                const m = Math.floor(s / 60);
+                const sec = s % 60;
+                return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+            }
 
             const mockupProgressInterval = setInterval(async () => {
                 try {
                     const progressResponse = await fetch(`/api/generation-progress/${mockupTrackingId}`);
                     const progressData = await progressResponse.json();
+                    const elapsed = formatElapsed(Date.now() - mockupStartTime);
 
                     if (progressData.status === 'processing') {
                         const pct = progressData.percentage || 0;
                         const current = progressData.current || 0;
                         const total = progressData.total || 0;
                         progressFill.style.width = Math.max(pct, 5) + '%';
-                        if (current > 0) {
-                            progressText.textContent = `${progressData.message} (${current}/${total}) - ${Math.round(pct)}%`;
+
+                        if (current > lastMockupCount) {
+                            lastMockupCount = current;
+                        }
+
+                        if (current > 0 && current < total) {
+                            const avgTime = (Date.now() - mockupStartTime) / current;
+                            const remaining = Math.round((total - current) * avgTime / 1000);
+                            const remMin = Math.floor(remaining / 60);
+                            const remSec = remaining % 60;
+                            const eta = remMin > 0 ? `~${remMin}m ${remSec}s left` : `~${remSec}s left`;
+                            progressText.textContent = `${progressData.message} - ${Math.round(pct)}% (${elapsed} elapsed, ${eta})`;
+                        } else if (current >= total && total > 0) {
+                            progressText.textContent = `${progressData.message} - ${elapsed} elapsed`;
                         } else {
-                            progressText.textContent = `${progressData.message || 'Preparing mockups...'} (0/${total})`;
+                            progressText.textContent = `${progressData.message || 'Preparing mockups...'} - ${elapsed} elapsed`;
                         }
                     }
                     else if (progressData.status === 'completed') {
@@ -7544,8 +7898,7 @@
                         setTimeout(() => { progress.style.display = 'none'; }, 2000);
                     }
                     else if (progressData.status === 'unknown') {
-                        // Task not started yet - show waiting message
-                        progressText.textContent = 'Preparing mockup generation...';
+                        progressText.textContent = `Preparing mockup generation... (${elapsed} elapsed)`;
                     }
                 } catch (e) {
                     // Ignore polling errors
@@ -7833,11 +8186,11 @@
                 });
                 
                 const data = await response.json();
-                
+
                 if (!response.ok || !data.success) {
                     throw new Error(data.error || 'Conversion failed');
                 }
-                
+
                 convertedSVGData = data.svg_content;
                 const info = data.extracted_info || {};
                 
@@ -8006,7 +8359,7 @@
                 showNotification('No SVG data available', 'error');
                 return;
             }
-            
+
             // Create blob and download
             const blob = new Blob([convertedSVGData], { type: 'image/svg+xml' });
             const url = URL.createObjectURL(blob);
@@ -8018,7 +8371,9 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
-        
+
+        // (Gemini Annotation Functions removed - using SVG pipeline for fallback)
+
     </script>
     
     <!-- Image Preview Modal -->
