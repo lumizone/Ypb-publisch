@@ -1538,7 +1538,19 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ## 📝 CHANGELOG
 
-### 15 lutego 2026
+### 15 lutego 2026 (wieczór)
+- ✅ **FIX: ZIP Download Bug** - pliki ZIP teraz zapisywane w output_dir zamiast temp_dir
+- ✅ **Problem**: ZIPy były tworzone w temp/ (auto-cleanup po 1h) → download 404 error
+- ✅ **Rozwiązanie**: 4 miejsca w app.py - ZIP path zmieniony z TEMP_DIR → output_dir/OUTPUT_DIR
+  - Labels ZIP (main pipeline) - linia ~3956
+  - Labels ZIP (SVG fallback) - linia ~3608
+  - Mockups ZIP (from labels) - linia ~4483
+  - Batch mockups ZIP (standalone) - linia ~5006
+- ✅ **Rezultat**: ZIPy persistent i downloadable, chronione przed temp cleanup (24h TTL)
+- ✅ **Pliki zmienione**: app.py (8 insertions, 8 deletions)
+- ✅ **Commit**: `98bacc6` - pushed to GitHub
+
+### 15 lutego 2026 (rano)
 - ✅ **CAS/MW Prefix Preservation** - zachowanie etykiet "CAS: " i "M.W.: " przy replacement
 - ✅ **Synchronized CAS/MW** - oba pola zawsze mają ten sam font_size i liczbę linii
 - ✅ **Zone-Based Positioning** - auto-detekcja dostępnej strefy z sąsiednich elementów SVG
@@ -1670,5 +1682,5 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ---
 
-**Last Updated**: 15 lutego 2026 (commit: `719fb1d`)
-**Status**: ✅ Production Ready - CAS/MW Zone-Based Fitting + 2400 DPI + SKU Filenames + 5 Data Fields + Google Fonts (398) + Fontconfig (188 aliases)
+**Last Updated**: 15 lutego 2026 (commit: `98bacc6`)
+**Status**: ✅ Production Ready - ZIP Download Fix + CAS/MW Zone-Based Fitting + 2400 DPI + SKU Filenames + 5 Data Fields + Google Fonts (398) + Fontconfig (188 aliases)
