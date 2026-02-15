@@ -43,21 +43,29 @@ class CSVManager:
                     product_name = ''
                     ingredients = ''
                     sku = ''
-                    
+                    cas = ''
+                    mw = ''
+
                     # Try direct column name first (case-insensitive)
                     for col_name, value in row.items():
                         col_clean = col_name.strip()
                         col_lower = col_clean.lower()
-                        
+
                         # Match Product column - exact match first, then contains
                         if col_lower == 'product' or col_lower.startswith('product'):
                             product_name = (value or '').strip()
                         # Match Ingredients column
-                        elif col_lower == 'ingredients' or 'ingredient' in col_lower or 'composition' in col_lower:
+                        elif col_lower == 'ingredients' or 'ingredient' in col_lower or 'composition' in col_lower or 'dosage' in col_lower:
                             ingredients = (value or '').strip()
                         # Match SKU column
                         elif col_lower == 'sku' or col_lower.startswith('sku'):
                             sku = (value or '').strip()
+                        # Match CAS column
+                        elif col_lower in ('cas', 'cas number', 'cas_number') or 'cas' in col_lower:
+                            cas = (value or '').strip()
+                        # Match MW column
+                        elif col_lower in ('m.w.', 'mw', 'molecular weight', 'molecular_weight') or 'molecular' in col_lower:
+                            mw = (value or '').strip()
                     
                     # Add product if at least one field has data
                     if product_name or ingredients or sku:
@@ -65,7 +73,9 @@ class CSVManager:
                             'id': len(products) + 1,
                             'Product': product_name,
                             'Ingredients': ingredients,
-                            'SKU': sku
+                            'SKU': sku,
+                            'CAS': cas,
+                            'MW': mw
                         }
                         products.append(product)
             
@@ -83,18 +93,20 @@ class CSVManager:
                 cleaned = {
                     'Product': product.get('Product', '').strip(),
                     'Ingredients': product.get('Ingredients', '').strip(),
-                    'SKU': product.get('SKU', '').strip()
+                    'SKU': product.get('SKU', '').strip(),
+                    'CAS': product.get('CAS', '').strip(),
+                    'MW': product.get('MW', '').strip()
                 }
                 # Only add if at least one field is filled
                 if cleaned['Product'] or cleaned['Ingredients'] or cleaned['SKU']:
                     cleaned_products.append(cleaned)
-            
+
             # Ensure directory exists
             self.csv_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             with open(self.csv_path, 'w', encoding='utf-8', newline='') as f:
                 # Use standard column names
-                writer = csv.DictWriter(f, fieldnames=['Product', 'Ingredients', 'SKU'], delimiter=',')
+                writer = csv.DictWriter(f, fieldnames=['Product', 'Ingredients', 'SKU', 'CAS', 'MW'], delimiter=',')
                 writer.writeheader()
                 writer.writerows(cleaned_products)
             
@@ -112,7 +124,9 @@ class CSVManager:
             'id': max_id + 1,
             'Product': product.get('Product', '').strip(),
             'Ingredients': product.get('Ingredients', '').strip(),
-            'SKU': product.get('SKU', '').strip()
+            'SKU': product.get('SKU', '').strip(),
+            'CAS': product.get('CAS', '').strip(),
+            'MW': product.get('MW', '').strip()
         }
         
         products.append(new_product)
@@ -140,6 +154,10 @@ class CSVManager:
             product['Ingredients'] = str(updates['Ingredients']).strip()
         if 'SKU' in updates:
             product['SKU'] = str(updates['SKU']).strip()
+        if 'CAS' in updates:
+            product['CAS'] = str(updates['CAS']).strip()
+        if 'MW' in updates:
+            product['MW'] = str(updates['MW']).strip()
         
         self.save_all(products)
         return product
@@ -182,6 +200,10 @@ class CSVManager:
                     product['Ingredients'] = str(update['Ingredients']).strip()
                 if 'SKU' in update:
                     product['SKU'] = str(update['SKU']).strip()
+                if 'CAS' in update:
+                    product['CAS'] = str(update['CAS']).strip()
+                if 'MW' in update:
+                    product['MW'] = str(update['MW']).strip()
         
         self.save_all(products)
         return self.read_all()
@@ -206,11 +228,13 @@ class CSVManager:
                 # Check if required columns exist
                 fieldnames_lower = [f.lower() for f in reader.fieldnames]
                 has_product = any('product' in f or 'name' in f for f in fieldnames_lower)
-                has_ingredients = any('ingredient' in f or 'composition' in f for f in fieldnames_lower)
+                has_ingredients = any('ingredient' in f or 'composition' in f or 'dosage' in f for f in fieldnames_lower)
                 has_sku = any('sku' in f for f in fieldnames_lower)
-                
-                if not (has_product and has_ingredients and has_sku):
-                    raise CSVManagerError("New CSV must have Product, Ingredients, and SKU columns")
+                has_cas = any('cas' in f for f in fieldnames_lower)
+                has_mw = any('m.w' in f or 'mw' in f or 'molecular' in f for f in fieldnames_lower)
+
+                if not (has_product and has_ingredients and has_sku and has_cas and has_mw):
+                    raise CSVManagerError("New CSV must have Product, Ingredients, SKU, CAS, and MW columns")
         
         except Exception as e:
             raise CSVManagerError(f"Invalid CSV file: {e}")

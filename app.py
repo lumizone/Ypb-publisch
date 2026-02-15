@@ -1796,7 +1796,19 @@ def preview_csv():
                 if key in columns_lower:
                     auto_mapping['sku'] = columns_lower[key]
                     break
-            
+
+            # CAS detection
+            for key in ['cas', 'cas number', 'cas_number', 'casnumber', 'cas no', 'cas no.']:
+                if key in columns_lower:
+                    auto_mapping['cas'] = columns_lower[key]
+                    break
+
+            # MW detection
+            for key in ['mw', 'm.w.', 'm.w', 'molecular weight', 'molecular_weight', 'molecularweight', 'mol weight', 'mol. weight']:
+                if key in columns_lower:
+                    auto_mapping['mw'] = columns_lower[key]
+                    break
+
             return jsonify({
                 'success': True,
                 'filename': filename,
@@ -1830,8 +1842,8 @@ def import_database():
         if not temp_path or not Path(temp_path).exists():
             return jsonify({'error': 'Preview file not found. Please upload again.'}), 400
         
-        if not mapping.get('product') or not mapping.get('ingredients') or not mapping.get('sku'):
-            return jsonify({'error': 'Please map all required fields: Product, Ingredients, SKU'}), 400
+        if not mapping.get('product') or not mapping.get('ingredients') or not mapping.get('sku') or not mapping.get('cas') or not mapping.get('mw'):
+            return jsonify({'error': 'Please map all required fields: Product, Ingredients, SKU, CAS, MW'}), 400
         
         import csv
         
@@ -1853,7 +1865,9 @@ def import_database():
                 products.append({
                     'Product': row.get(mapping['product'], ''),
                     'Ingredients': row.get(mapping['ingredients'], ''),
-                    'SKU': row.get(mapping['sku'], '')
+                    'SKU': row.get(mapping['sku'], ''),
+                    'CAS': row.get(mapping['cas'], ''),
+                    'MW': row.get(mapping['mw'], '')
                 })
         
         # Generate unique filename
@@ -1868,7 +1882,7 @@ def import_database():
         
         # Write new CSV with standard columns
         with open(db_path, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=['Product', 'Ingredients', 'SKU'])
+            writer = csv.DictWriter(f, fieldnames=['Product', 'Ingredients', 'SKU', 'CAS', 'MW'])
             writer.writeheader()
             writer.writerows(products)
         
@@ -3741,6 +3755,41 @@ def _generate_labels_task(
             except Exception as tag_err:
                 logger.warning(f"Position tagging failed (will try normal parse): {tag_err}")
 
+        # Inject data-placeholder='cas' and 'mw' into SVG (after position tagging)
+        if Path(template_path).suffix.lower() == '.svg' and extracted_info:
+            try:
+                import re as _re
+                with open(template_path, 'r', encoding='utf-8') as f:
+                    _svg = f.read()
+                _ext_sku = extracted_info.get('sku', '').strip()
+                csv_path_db = Path(get_current_database())
+                if csv_path_db.exists() and _ext_sku:
+                    _csv_mgr = CSVManager(csv_path_db)
+                    for _p in _csv_mgr.read_all():
+                        _p_sku = _p.get('SKU', '').strip()
+                        if _p_sku and (_ext_sku.upper() in _p_sku.upper() or _p_sku.upper() in _ext_sku.upper()):
+                            _cas_v = _p.get('CAS', '').strip()
+                            _mw_v = _p.get('MW', '').strip()
+                            if _cas_v and 'data-placeholder="cas"' not in _svg:
+                                _svg = _re.sub(
+                                    rf'(<text\b[^>]*?)>((?:[^<]*?{_re.escape(_cas_v)}[^<]*))</text>',
+                                    r'\1 data-placeholder="cas">\2</text>',
+                                    _svg, count=1
+                                )
+                                logger.info(f"[CAS/MW] Injected cas placeholder for '{_cas_v}'")
+                            if _mw_v and 'data-placeholder="mw"' not in _svg:
+                                _svg = _re.sub(
+                                    rf'(<text\b[^>]*?)>((?:[^<]*?{_re.escape(_mw_v)}[^<]*))</text>',
+                                    r'\1 data-placeholder="mw">\2</text>',
+                                    _svg, count=1
+                                )
+                                logger.info(f"[CAS/MW] Injected mw placeholder for '{_mw_v}'")
+                            break
+                with open(template_path, 'w', encoding='utf-8') as f:
+                    f.write(_svg)
+            except Exception as e:
+                logger.warning(f"CAS/MW inject failed: {e}", exc_info=True)
+
         # Initialize BatchProcessor ONCE for all products (was: 1 per product = 92x slower!)
         import csv
         from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
@@ -3748,7 +3797,7 @@ def _generate_labels_task(
         # Create single temp CSV with all products
         temp_csv_path = config.TEMP_DIR / f"all_products_{job_id}.csv"
         with open(temp_csv_path, 'w', newline='', encoding='utf-8') as f:
-            fieldnames = ['Product', 'Ingredients', 'SKU']
+            fieldnames = ['Product', 'Ingredients', 'SKU', 'CAS', 'MW']
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             for p in products:
@@ -3832,7 +3881,7 @@ def _generate_labels_task(
                             try:
                                 import cairosvg
                                 png_path = Path(svg_path).with_suffix('.png')
-                                cairosvg.svg2png(url=str(svg_path), write_to=str(png_path))
+                                cairosvg.svg2png(url=str(svg_path), write_to=str(png_path), dpi=config.PNG_DPI)
                             except Exception as e:
                                 logger.warning(f"Failed to convert SVG to PNG: {e}")
 
@@ -3841,25 +3890,25 @@ def _generate_labels_task(
 
                         # Copy SVG
                         if svg_path and Path(svg_path).exists():
-                            svg_output = output_dir / f"label_{sku_safe}.svg"
+                            svg_output = output_dir / f"{sku_safe}.svg"
                             shutil.copy(svg_path, svg_output)
                             files_copied['svg'] = str(svg_output)
 
                         # Copy PNG (for mockups)
                         if png_path and Path(png_path).exists():
-                            png_output = output_dir / f"label_{sku_safe}.png"
+                            png_output = output_dir / f"{sku_safe}.png"
                             shutil.copy(png_path, png_output)
                             files_copied['png'] = str(png_output)
 
                         # Copy PDF
                         if pdf_path and Path(pdf_path).exists():
-                            pdf_output = output_dir / f"label_{sku_safe}.pdf"
+                            pdf_output = output_dir / f"{sku_safe}.pdf"
                             shutil.copy(pdf_path, pdf_output)
                             files_copied['pdf'] = str(pdf_output)
 
                         # Copy JPG as fallback
                         if jpg_path and Path(jpg_path).exists():
-                            jpg_output = output_dir / f"label_{sku_safe}.jpg"
+                            jpg_output = output_dir / f"{sku_safe}.jpg"
                             shutil.copy(jpg_path, jpg_output)
                             files_copied['jpg'] = str(jpg_output)
 
@@ -4825,7 +4874,7 @@ def generate_batch_mockups():
                         import csv
                         temp_csv = temp_label_dir / "temp_product.csv"
                         with open(temp_csv, 'w', newline='', encoding='utf-8') as f:
-                            fieldnames = ['Product', 'Ingredients', 'SKU']
+                            fieldnames = ['Product', 'Ingredients', 'SKU', 'CAS', 'MW']
                             writer = csv.DictWriter(f, fieldnames=fieldnames)
                             writer.writeheader()
                             # Filter product to only include expected fields
@@ -5649,6 +5698,9 @@ def add_data_placeholders_to_svg_text(svg_path: Path, extracted_info: dict) -> s
         sku_value = matched_product.get('SKU', '').strip()
         product_name_value = matched_product.get('Product', '').strip()
         ingredients_value = matched_product.get('Ingredients', '').strip()
+        cas_value = matched_product.get('CAS', '').strip()
+        mw_value = matched_product.get('MW', '').strip()
+        logger.info(f"[PlaceholderAdd] SKU={sku_value}, CAS='{cas_value}', MW='{mw_value}', product='{product_name_value}'")
 
         import re
 
@@ -5685,6 +5737,25 @@ def add_data_placeholders_to_svg_text(svg_path: Path, extracted_info: dict) -> s
                     if not (sku_value and sku_value.upper() in text_upper) and not (product_name_value and product_name_value.upper() in text_upper):
                         logger.info(f"Adding data-placeholder='ingredients' to text: {text_content[:50]}")
                         return text_elem.replace('<text ', '<text data-placeholder="ingredients" ', 1)
+
+            # Check for CAS number
+            if cas_value:
+                if cas_value in text_content:
+                    logger.info(f"Adding data-placeholder='cas' to text: {text_content[:50]}")
+                    return text_elem.replace('<text ', '<text data-placeholder="cas" ', 1)
+                # Also check aria-label (PyMuPDF stores text there too)
+                if cas_value in text_elem:
+                    logger.info(f"Adding data-placeholder='cas' (aria-label match) to text: {text_content[:50]}")
+                    return text_elem.replace('<text ', '<text data-placeholder="cas" ', 1)
+
+            # Check for MW (Molecular Weight)
+            if mw_value:
+                if mw_value in text_content:
+                    logger.info(f"Adding data-placeholder='mw' to text: {text_content[:50]}")
+                    return text_elem.replace('<text ', '<text data-placeholder="mw" ', 1)
+                if mw_value in text_elem:
+                    logger.info(f"Adding data-placeholder='mw' (aria-label match) to text: {text_content[:50]}")
+                    return text_elem.replace('<text ', '<text data-placeholder="mw" ', 1)
 
             return text_elem
 

@@ -70,9 +70,8 @@ class BatchProcessor:
         
         try:
             # Sanitize filenames
-            safe_name = self._sanitize_filename(product_name)
             safe_sku = self._sanitize_filename(sku)
-            base_filename = f"{safe_name}_{safe_sku}"
+            base_filename = safe_sku
             
             # Replace text in template
             svg_path = self.replacer.replace(product)

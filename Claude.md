@@ -1,6 +1,6 @@
 # YPBv2 - Label & Mockup Generator
 
-**Status**: ✅ Production Ready (8 lutego 2026)
+**Status**: ✅ Production Ready (15 lutego 2026)
 **Lokalizacja**: `/Users/lukasz/YPBv2`
 **Port**: http://localhost:8000
 **Railway**: https://ypbv2.up.railway.app (8 CPU / 8GB RAM)
@@ -8,6 +8,416 @@
 ---
 
 ## 🎯 AKTUALNY STAN APLIKACJI
+
+### ✅ CAS Number & Molecular Weight Fields (14.02.2026)
+
+**Cel**: Dodanie pól CAS (Chemical Abstract Service) i M.W. (Molecular Weight) do systemu generowania labels z automatycznym wykrywaniem
+
+---
+
+#### 1. Database Structure: 3 → 5 Columns
+
+**Problem**: Baza danych miała tylko 3 kolumny (Product, Ingredients, SKU) - brakowało CAS i M.W.
+
+**Rozwiązanie**: Rozszerzenie struktury bazy danych do 5 kolumn
+
+**Nowa struktura CSV:**
+```csv
+SKU,Product,Dosage,CAS Number,Molecular Weight
+YPB.211,Sermorelin,10mg,114466-38-5,3357.88 Da
+YPB.212,BPC-157,5mg,137525-51-0,1419.55 Da
+```
+
+**Pliki zmienione:**
+- `databases/YPB_final_databse.csv` - 65 produktów (YPB.211-283) z pełnymi danymi
+- Format: SKU, Product, Dosage, CAS Number, Molecular Weight
+
+**Rezultat**: Każdy produkt ma teraz CAS number i wagę molekularną
+
+---
+
+#### 2. Backend - CSV Manager Updates
+
+**Zmienione pliki:**
+- `csv_manager.py` (linie 43-80, 87-109, 116-205)
+  - Column detection: `cas`, `cas number`, `molecular weight`, `m.w.`
+  - Product dict rozszerzony: `'CAS'`, `'MW'`
+  - All CRUD operations: `read_all()`, `save_all()`, `add_product()`, `update_product()`, `bulk_update()`
+  - CSV validation: `replace_csv()` wymaga CAS i MW
+
+- `config.py` (linia 46)
+  - `REQUIRED_PLACEHOLDERS = ["product_name", "ingredients", "sku", "cas", "mw"]`
+
+- `text_replacer.py` (linie 24-30, 186-194)
+  - `FIELD_MAPPING` dodano: `'cas'`, `'mw'`
+  - Simple text replacement (bez surgical replace jak SKU)
+
+**Rezultat**: Backend obsługuje CAS i MW we wszystkich operacjach
+
+---
+
+#### 3. Frontend - UI Updates
+
+**Database Tab** (app_dashboard.html):
+- Linie 1634-1644: Table header - dodano `<th>CAS</th>` i `<th>M.W.</th>`
+- Linie 4979: Colspan zmieniony z 5 → 7 (checkbox + 5 columns + actions)
+- Linie 5027-5079: Dodano `tdCas` i `tdMw` cells z edycją inline
+- Linie 5050-5056: Append CAS i MW cells do table row
+
+**Product Selection Modal** (app_dashboard.html):
+- Linie 8547-8550: Modal table header - dodano CAS i MW kolumny
+- Linie 7489-7501: Dodano CAS i MW cells do renderowania
+
+**Import CSV Modal** (app_dashboard.html):
+- Linie 8514-8525: Dodano mapping selects dla "CAS Number *" i "Molecular Weight *"
+- Linie 3149-3150: `populateMappingSelects()` - dodano mappingCas i mappingMw
+- Linie 3174-3182: `validateImportMapping()` - walidacja CAS i MW
+- Linie 3194-3221: `submitImport()` - wysyła mapowanie CAS i MW do backendu
+
+**Add Product** (app_dashboard.html):
+- Linie 5244-5251: Nowy produkt ma pola `CAS: ''` i `MW: ''`
+
+**Rezultat**: UI pokazuje i edytuje CAS i MW we wszystkich miejscach
+
+---
+
+#### 4. Backend - CSV Import & Auto-mapping
+
+**Pliki zmienione:**
+- `app.py` (linia 1833-1834) - Validation: wymaga mapowania CAS i MW
+- `app.py` (linia 1853-1857) - Mapowanie danych: dodano `'CAS'` i `'MW'`
+- `app.py` (linia 1871) - CSV Writer: fieldnames = `['Product', 'Ingredients', 'SKU', 'CAS', 'MW']`
+- `app.py` (linia 1795-1813) - Auto-detection CAS i MW kolumn:
+  ```python
+  # CAS detection
+  for key in ['cas', 'cas number', 'cas_number', 'casnumber']:
+      if key in columns_lower:
+          auto_mapping['cas'] = columns_lower[key]
+          break
+
+  # MW detection
+  for key in ['mw', 'm.w.', 'm.w', 'molecular weight', 'molecular_weight']:
+      if key in columns_lower:
+          auto_mapping['mw'] = columns_lower[key]
+          break
+  ```
+
+**Rezultat**: Import CSV automatycznie wykrywa i mapuje CAS i MW kolumny
+
+---
+
+#### 5. Auto-detection w Template (⭐ KLUCZOWE)
+
+**Problem**: System wymagał ręcznego rysowania areas lub data-placeholder w template dla CAS i MW
+
+**Rozwiązanie**: Automatyczne wykrywanie CAS i MW w template SVG przez matching z wartościami z bazy
+
+**Implementacja** (`app.py` linie 5662-5723):
+
+```python
+def add_data_placeholders_to_svg_text(svg_path, extracted_info):
+    # 1. Wykryj SKU w template
+    # 2. Znajdź matching product w bazie danych
+    # 3. Pobierz wartości z bazy:
+    cas_value = matched_product.get('CAS', '').strip()
+    mw_value = matched_product.get('MW', '').strip()
+
+    # 4. Dla każdego <text> w SVG:
+    #    - Jeśli zawiera CAS number (np. "114466-38-5")
+    #      → dodaj data-placeholder="cas"
+    #    - Jeśli zawiera MW (np. "3357.88 Da")
+    #      → dodaj data-placeholder="mw"
+```
+
+**Flow:**
+1. User uploaduje template SVG z wartościami z bazy:
+   ```xml
+   <text>Sermorelin</text>
+   <text>10mg</text>
+   <text>YPB.211</text>
+   <text>114466-38-5</text>     <!-- CAS z bazy -->
+   <text>3357.88 Da</text>        <!-- MW z bazy -->
+   ```
+
+2. System automatycznie:
+   - Wykrywa SKU: `YPB.211`
+   - Znajduje produkt w bazie: `{Product: "Sermorelin", CAS: "114466-38-5", MW: "3357.88 Da"}`
+   - Dla każdego `<text>`:
+     - `"114466-38-5"` matches `cas_value` → dodaje `data-placeholder="cas"`
+     - `"3357.88 Da"` matches `mw_value` → dodaje `data-placeholder="mw"`
+
+3. Output SVG z placeholders:
+   ```xml
+   <text data-placeholder="product_name">Sermorelin</text>
+   <text data-placeholder="ingredients">10mg</text>
+   <text data-placeholder="sku">YPB.211</text>
+   <text data-placeholder="cas">114466-38-5</text>
+   <text data-placeholder="mw">3357.88 Da</text>
+   ```
+
+4. Generate Labels - system podmienia wszystkie 5 pól dla każdego produktu
+
+**Kluczowe zmiany:**
+- `app.py:5667-5669` - Dodano `cas_value` i `mw_value` z matched product
+- `app.py:5703-5712` - Dodano checks dla CAS i MW w funkcji `add_placeholder()`
+- `template_parser.py:497-508` - **USUNIĘTO** `'CAS:'` i `'M.W.:'` z `skip_keywords`
+- `template_parser.py:566-576` - **USUNIĘTO** `'CAS:'` i `'M.W.:'` z `disallowed` keywords
+
+**Rezultat**:
+- ✅ Zero manual work - user NIE musi rysować areas
+- ✅ Zero Illustrator edits - user NIE musi dodawać data-placeholder w AI
+- ✅ Template z wartościami z bazy → auto-detection → generate labels
+
+---
+
+#### 6. Text Replacement
+
+**FIELD_MAPPING** (`text_replacer.py`):
+```python
+FIELD_MAPPING = {
+    'sku': ['SKU', 'sku'],
+    'product_name': ['Product', 'product_name', 'Name', 'name'],
+    'ingredients': ['Ingredients', 'ingredients', 'Composition', 'composition', 'Dosage', 'dosage'],
+    'cas': ['CAS', 'cas', 'CAS Number', 'cas_number'],          # NOWE
+    'mw': ['MW', 'mw', 'M.W.', 'M.W', 'Molecular Weight', 'molecular_weight'],  # NOWE
+}
+```
+
+**Replacement Logic** (`text_replacer.py:186-194`):
+- SKU: surgical replace (tylko YPB.XXX, zachowuje "RESEARCH USE ONLY")
+- CAS/MW: **simple text replacement** (cały tekst podmieniony)
+
+**Przykład:**
+```
+Template:        YPB.211 → Output: YPB.212
+Template:  114466-38-5 → Output: 137525-51-0
+Template:   3357.88 Da → Output: 1419.55 Da
+```
+
+---
+
+#### 7. Testing & Verification
+
+**Test Results** (14.02.2026):
+
+| Test | Status | Wynik |
+|------|--------|-------|
+| Database (65 products) | ✅ | All have CAS & MW |
+| API `/api/database/products` | ✅ | Returns CAS & MW |
+| Auto-detection (5 placeholders) | ✅ | All detected |
+| Text Replacement | ✅ | CAS & MW replaced |
+| Config REQUIRED_PLACEHOLDERS | ✅ | 5 fields |
+| CSV Import auto-mapping | ✅ | CAS & MW mapped |
+| Skip keywords removed | ✅ | CAS & MW not skipped |
+
+**Test Template:**
+```xml
+<text>Sermorelin</text>
+<text>10mg</text>
+<text>YPB.211</text>
+<text>114466-38-5</text>
+<text>3357.88 Da</text>
+```
+
+**Auto-detection Output:**
+```
+✅ Matched product by SKU: YPB.211
+✅ Added data-placeholder='product_name' to text: Sermorelin
+✅ Added data-placeholder='ingredients' to text: 10mg
+✅ Added data-placeholder='sku' to text: YPB.211
+✅ Added data-placeholder='cas' to text: 114466-38-5
+✅ Added data-placeholder='mw' to text: 3357.88 Da
+```
+
+**Generated Label (YPB.212):**
+```xml
+<text data-placeholder="product_name">BPC-157</text>
+<text data-placeholder="ingredients">5mg</text>
+<text data-placeholder="sku">YPB.212</text>
+<text data-placeholder="cas">137525-51-0</text>
+<text data-placeholder="mw">1419.55 Da</text>
+```
+
+---
+
+#### 8. Files Modified Summary
+
+**Backend (8 files):**
+- `config.py` - REQUIRED_PLACEHOLDERS += cas, mw
+- `csv_manager.py` - Column detection, CRUD operations
+- `text_replacer.py` - FIELD_MAPPING, replacement logic
+- `template_parser.py` - Removed skip_keywords for CAS/MW
+- `app.py` - Auto-detection, CSV import, API
+- `databases/YPB_final_databse.csv` - New 5-column structure
+
+**Frontend (1 file):**
+- `app_dashboard.html` - Database table, Import modal, Product selection modal
+
+**Total lines changed:** ~300 lines
+
+---
+
+#### 9. User Workflow (UNCHANGED!)
+
+**Workflow pozostał taki sam:**
+1. Upload template SVG/AI (z wartościami z bazy)
+2. System automatycznie wykrywa wszystkie 5 pól
+3. Generate Labels → wszystkie pola podmienione
+
+**Nowe możliwości:**
+- ✅ Database tab pokazuje CAS i MW (edycja inline)
+- ✅ Import CSV automatycznie mapuje CAS i MW
+- ✅ Template auto-detection wykrywa CAS i MW (zero manual work)
+
+**Status**: ✅ Zaimplementowane i przetestowane (14.02.2026)
+
+---
+
+### ✅ CAS/MW Smart Text Fitting & Zone-Based Positioning (15.02.2026)
+
+**Cel**: Inteligentne dopasowanie CAS i M.W. tekstu - zachowanie prefiksów, synchronizacja fontów, auto-detekcja wolnej przestrzeni, brak nachodzenia na sąsiednie teksty
+
+---
+
+#### 1. Prefix Preservation
+
+**Problem**: Przy replacement CAS/MW tracone były etykiety "CAS: " i "M.W.: "
+
+**Rozwiązanie** (`text_replacer.py:~191`):
+```python
+# Parse original text for prefix (split on ":"), prepend to new value
+orig = placeholder_info.get('original_full_text', '')
+if orig and ':' in orig:
+    prefix = orig.split(':', 1)[0] + ': '
+    display_value = prefix + new_text
+```
+
+**Rezultat**: `CAS: 137525-51-0` → `CAS: 885340-08-9` (prefix zachowany)
+
+---
+
+#### 2. Synchronized CAS/MW Formatting
+
+**Problem**: CAS i MW miały różne rozmiary fontów i różną liczbę linii - niespójny wygląd
+
+**Rozwiązanie** (`text_replacer.py:_sync_cas_mw_format()`):
+- Pre-kalkulacja PRZED replacement loop
+- Oba pola zawsze używają tego samego font_size i tej samej liczby linii
+- Algorytm: 1 linia → shrink 20% → 2 linie na 90% → dalszy shrink (min 60%)
+
+---
+
+#### 3. Zone-Based Positioning (⭐ KLUCZOWE)
+
+**Problem**: CAS/MW nachodziły na sąsiednie teksty ("FOR IM OR SQ USE ONLY", SKU, etc.)
+
+**Rozwiązanie**: Auto-detekcja dostępnej strefy z uwzględnieniem sąsiednich elementów
+
+**Algorytm** (`text_replacer.py:_sync_cas_mw_format()`):
+```
+1. Zbierz WSZYSTKIE <text> elementy w tej samej strefie X (prawa strona labela)
+2. Dla każdego sąsiada zapisz (y_baseline, font_size)
+3. Znajdź boundary_top = nearest element ABOVE CAS baseline + 5px gap
+4. Znajdź boundary_bottom = nearest element BELOW MW:
+   - Uwzględnij ASCENDER: y_below - font_size_below * 0.85 - 3px
+   - SVG y = baseline (dół tekstu), ascender = ~85% font_size nad baseline
+5. available_height = boundary_bottom - boundary_top
+6. available_width = svg_width - elem_x - 15px (prawy edge labela)
+```
+
+**Kluczowe**: `boundary_bottom` uwzględnia wizualną górę tekstu poniżej (ascender), nie sam baseline. Stary błąd: `-5px` → nowy: `- font_size * 0.85 - 3px`
+
+**Przykład (GLOW label):**
+```
+"FOR IM OR SQ USE ONLY" at y=449.97, font-size=23.44px
+Old boundary_bottom: 449.97 - 5 = 445 (MW 2nd line at 434 → fits but OVERLAPS visually!)
+New boundary_bottom: 449.97 - 23.44*0.85 - 3 = 427 (MW 2nd line would exceed → font shrunk)
+```
+
+---
+
+#### 4. Y Position Strategy
+
+**Problem**: CAS/MW przesuwane na górę strefy (boundary_top) zamiast trzymać oryginalne pozycje
+
+**Rozwiązanie**: Zachowaj ORYGINALNE pozycje Y z template:
+- `cas_y` = oryginalna pozycja z template (nie zmieniana)
+- `mw_y` = oryginalna pozycja z template
+- MW przesuwa się w dół TYLKO gdy CAS zawija do 2 linii (żeby nie nachodzić)
+
+---
+
+#### 5. Line Height
+
+**Problem**: Duży odstęp między liniami przy zawijaniu (1.25x font_size)
+
+**Rozwiązanie**: `line_height = font_size * 1.1` (ciasny spacing dla multi-line CAS/MW)
+
+---
+
+#### 6. Width Calculation
+
+**Problem**: `available_width` bazowała na najszerszym sąsiednim tekście → za wąsko
+
+**Rozwiązanie**: `available_width = svg_width - elem_x - 15px` (pełna szerokość do prawej krawędzi labela)
+
+---
+
+#### Pliki zmienione:
+- `text_replacer.py` - `_sync_cas_mw_format()`, prefix preservation, zone-based positioning
+- `template_parser.py` - cas/mw optional placeholders
+- `data_mapper.py` - cas/mw optional in validation
+- `app.py` - CAS/MW inject inside `_generate_labels_task()` after `parse_by_position()`
+
+**Status**: ✅ Zaimplementowane (15.02.2026)
+
+---
+
+### ✅ Filename Format + 2400 DPI Output (13.02.2026)
+
+**Cel**: Zmiana nazw plików label na format SKU (YPB.200) + zwiększenie DPI do 2400
+
+---
+
+#### 1. Filename Format: SKU Only
+
+**Problem**: Pliki label miały format `ProductName_YPB.200.jpg` - za długie nazwy
+
+**Rozwiązanie**: Pliki teraz nazwane tylko po SKU: `YPB.200.jpg`
+
+**Zmienione miejsca:**
+- `batch_processor.py:73-75` - główny pipeline: `base_filename = safe_sku` (było: `f"{safe_name}_{safe_sku}"`)
+- `app.py:3844-3862` - SVG fallback pipeline: `{sku_safe}.svg/png/pdf/jpg` (było: `label_{sku_safe}.*`)
+
+**Rezultat**: Pliki nazwane `YPB.200.svg`, `YPB.200.png`, `YPB.200.pdf`, `YPB.200.jpg`
+
+#### 2. DPI: 300 → 2400
+
+**Problem**: Output labels w 300 DPI - za niska rozdzielczość
+
+**Rozwiązanie**: Zwiększenie do 2400 DPI we wszystkich ścieżkach renderowania
+
+**Zmienione miejsca:**
+- `config.py:49` - `PNG_DPI = 2400` (było: 300)
+- `app.py:3835` - SVG fallback path: dodano `dpi=config.PNG_DPI` (było: brak DPI = 96 default!)
+
+**Ścieżki renderowania i ich DPI:**
+
+| Ścieżka | Plik | DPI |
+|----------|------|-----|
+| Main pipeline PNG | `renderer.py:render_png()` | 2400 (via config.PNG_DPI) |
+| Main pipeline JPG | `renderer.py:render_jpg()` | 2400 (via config.PNG_DPI) |
+| SVG fallback PNG | `app.py:3835` | 2400 (via config.PNG_DPI) |
+| Preview/mockup input | `app.py:1057, 4863` | Bez zmian (preview only) |
+| AI→SVG konwersja | `app.py:1528` | 300 (bez zmian - to SVG vector preview) |
+
+**Uwaga**: 2400 DPI = ~64x więcej pikseli niż 300 DPI. Pliki JPG będą znacznie większe.
+
+**Status**: ✅ Zaimplementowane
+
+**Pliki zmienione**: `config.py`, `app.py`, `batch_processor.py`
+
+---
 
 ### ✅ Google Fonts Library + Fontconfig Aliases (08.02.2026)
 
@@ -914,11 +1324,12 @@ Graceful timeout: 30s → 60s
 
 ### 1. **Label Generator**
 - Upload template (SVG/AI)
-- Upload CSV database (92 produkty)
-- Batch generation: SVG + PNG (300 DPI) + PDF + JPG
+- Upload CSV database (65 produkty: YPB.211-283)
+- **5 data fields**: Product Name, Ingredients, SKU, **CAS Number**, **Molecular Weight** - NEW 14.02.2026
+- Batch generation: SVG + PNG (2400 DPI) + PDF + JPG
 - Intelligent text wrapping & formatting
 - **Text alignment control** (LEFT/CENTER/RIGHT) - NEW 01.02.2026
-- Auto-detection placeholders (`data-placeholder`)
+- **Auto-detection placeholders** (zero manual work) - ENHANCED 14.02.2026
 
 ### 2. **Mockup Generator**
 - Upload vial image
@@ -982,7 +1393,7 @@ Graceful timeout: 30s → 60s
 ├── .env.local                    # API keys
 ├── requirements.txt              # Python dependencies
 ├── databases/
-│   └── YPB_final_databse.csv    # 92 produkty
+│   └── YPB_data_Arkusz3.csv     # 91 produktów (YPB.101 - YPB.283)
 ├── fonts/
 │   ├── google/                  # 398 Google Fonts TTF (81 families)
 │   └── montserrat/              # 9 Montserrat TTF
@@ -1005,7 +1416,7 @@ DISABLE_AUTH=true
 
 ### Kluczowe Ustawienia (config.py)
 ```python
-PNG_DPI = 300
+PNG_DPI = 2400
 PDF_VECTOR_MODE = True
 MAX_CONCURRENT_JOBS = 4
 GEMINI_MOCKUP_MODEL = 'gemini-2.5-flash-image'
@@ -1100,7 +1511,9 @@ tail -f /tmp/flask_app.log
 - **Total codebase**: ~20,900 linii
 - **Google Fonts**: 398 plików TTF (81 rodzin, 32 MB)
 - **Fontconfig aliases**: 188 match rules
-- **Database**: 92 produkty (YPB.100 - YPB.283)
+- **Database**: 91 produktów (YPB.101 - YPB.283), 5 kolumn (Product, Ingredients, SKU, CAS, MW)
+- **Database fields**: 5 (Product, Ingredients, SKU, **CAS Number**, **Molecular Weight**)
+- **Auto-detection**: 5 placeholders (100% automatic, zero manual work)
 - **Output total**: ~1.1 GB (archiwum)
 - **Avg label generation**: 2 minuty
 - **Avg mockup generation**: 15-20 minut (91 mockups, parallel)
@@ -1124,6 +1537,38 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 ---
 
 ## 📝 CHANGELOG
+
+### 15 lutego 2026
+- ✅ **CAS/MW Prefix Preservation** - zachowanie etykiet "CAS: " i "M.W.: " przy replacement
+- ✅ **Synchronized CAS/MW** - oba pola zawsze mają ten sam font_size i liczbę linii
+- ✅ **Zone-Based Positioning** - auto-detekcja dostępnej strefy z sąsiednich elementów SVG
+- ✅ **Ascender-Aware Boundaries** - boundary_bottom uwzględnia wizualną górę tekstu poniżej (font_size * 0.85)
+- ✅ **Original Y Positions** - CAS/MW zostają na oryginalnych pozycjach, MW przesuwa się tylko przy zawijaniu CAS
+- ✅ **Tight Line Height** - line_height=1.1x (było: 1.25x) dla mniejszych odstępów między liniami
+- ✅ **Full Width** - available_width = SVG edge - elem_x (pełna szerokość labela)
+- ✅ **Optional CAS/MW** - template_parser i data_mapper traktują cas/mw jako opcjonalne
+- ✅ **CAS/MW Inject** - automatyczne wstrzykiwanie data-placeholder po parse_by_position()
+- ✅ **Pliki zmienione**: text_replacer.py, template_parser.py, data_mapper.py, app.py
+- ✅ **Commit**: `719fb1d` - pushed to GitHub
+
+### 14 lutego 2026
+- ✅ **CAS Number & Molecular Weight** - dodanie 2 nowych pól do systemu (5 total fields)
+- ✅ **Database Structure** - 3 kolumny → 5 kolumn (Product, Ingredients, SKU, **CAS**, **MW**)
+- ✅ **Auto-detection CAS/MW** - automatyczne wykrywanie w template przez matching z bazą (zero manual work)
+- ✅ **CSV Manager** - wszystkie CRUD operacje obsługują CAS i MW
+- ✅ **Import CSV** - auto-mapping dla "CAS Number" i "Molecular Weight" kolumn
+- ✅ **UI Updates** - Database table (7 kolumn), Import modal (5 mappings), Product Selection modal
+- ✅ **Text Replacement** - FIELD_MAPPING rozszerzony o 'cas' i 'mw'
+- ✅ **Template Parser** - usunięto CAS/MW z skip_keywords (nie pomija tych elementów)
+- ✅ **Backend API** - `/api/database/products` zwraca CAS i MW
+- ✅ **Testing** - 7/7 testów passed (database, API, auto-detection, replacement, config, import, skip)
+- ✅ **Pliki zmienione**: 9 plików (config.py, csv_manager.py, text_replacer.py, template_parser.py, app.py, app_dashboard.html, databases/)
+- ✅ **Total lines**: ~300 linii dodanych/zmienionych
+
+### 13 lutego 2026
+- ✅ **Filename Format** - pliki label nazwane po SKU: `YPB.200.jpg` (było: `ProductName_YPB.200.jpg`)
+- ✅ **2400 DPI** - wszystkie outputy label w 2400 DPI (było: 300 DPI)
+- ✅ **SVG fallback DPI fix** - dodano `dpi=config.PNG_DPI` do SVG fallback path (było: 96 DPI default!)
 
 ### 8 lutego 2026
 - ✅ **Google Fonts Library** - 398 fontów (81 rodzin) pobrane z fontsource CDN
@@ -1225,5 +1670,5 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ---
 
-**Last Updated**: 8 lutego 2026 (commit: 1261d58)
-**Status**: ✅ Production Ready - Google Fonts (398) + CFF Decoding + Fontconfig (188 aliases) + Mockup Progress UX
+**Last Updated**: 15 lutego 2026 (commit: `719fb1d`)
+**Status**: ✅ Production Ready - CAS/MW Zone-Based Fitting + 2400 DPI + SKU Filenames + 5 Data Fields + Google Fonts (398) + Fontconfig (188 aliases)

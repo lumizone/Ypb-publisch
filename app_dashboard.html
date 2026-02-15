@@ -1639,6 +1639,8 @@
                                 <th>Product Name</th>
                                 <th>Ingredients</th>
                                 <th>SKU</th>
+                                <th>CAS</th>
+                                <th>M.W.</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -3144,8 +3146,8 @@
         }
         
         function populateMappingSelects(columns, autoMapping) {
-            const selects = ['mappingProduct', 'mappingIngredients', 'mappingSku'];
-            const mappingKeys = ['product', 'ingredients', 'sku'];
+            const selects = ['mappingProduct', 'mappingIngredients', 'mappingSku', 'mappingCas', 'mappingMw'];
+            const mappingKeys = ['product', 'ingredients', 'sku', 'cas', 'mw'];
             
             selects.forEach((selectId, index) => {
                 const select = document.getElementById(selectId);
@@ -3173,9 +3175,11 @@
             const product = document.getElementById('mappingProduct').value;
             const ingredients = document.getElementById('mappingIngredients').value;
             const sku = document.getElementById('mappingSku').value;
+            const cas = document.getElementById('mappingCas').value;
+            const mw = document.getElementById('mappingMw').value;
             const dbName = document.getElementById('importDbName').value.trim();
-            
-            const isValid = product && ingredients && sku && dbName;
+
+            const isValid = product && ingredients && sku && cas && mw && dbName;
             document.getElementById('importSubmitBtn').disabled = !isValid;
         }
         
@@ -3191,17 +3195,19 @@
             const product = document.getElementById('mappingProduct').value;
             const ingredients = document.getElementById('mappingIngredients').value;
             const sku = document.getElementById('mappingSku').value;
+            const cas = document.getElementById('mappingCas').value;
+            const mw = document.getElementById('mappingMw').value;
             const dbName = document.getElementById('importDbName').value.trim();
-            
-            if (!product || !ingredients || !sku || !dbName) {
+
+            if (!product || !ingredients || !sku || !cas || !mw || !dbName) {
                 showNotification('Please fill all required fields', 'error');
                 return;
             }
-            
+
             const submitBtn = document.getElementById('importSubmitBtn');
             submitBtn.disabled = true;
             submitBtn.textContent = 'Importing...';
-            
+
             try {
                 const response = await fetch('/api/databases/import', {
                     method: 'POST',
@@ -3211,7 +3217,9 @@
                         mapping: {
                             product: product,
                             ingredients: ingredients,
-                            sku: sku
+                            sku: sku,
+                            cas: cas,
+                            mw: mw
                         },
                         name: dbName
                     })
@@ -4976,7 +4984,7 @@
             tbody.innerHTML = '';
             
             if (dataToRender.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: #787774;">No products found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #787774;">No products found</td></tr>';
                 return;
             }
             
@@ -5037,7 +5045,33 @@
                         inputSku.style.setProperty('-webkit-text-fill-color', '#37352f', 'important');
                     }
                 }, 0);
-                
+
+                // CAS cell
+                const tdCas = document.createElement('td');
+                tdCas.innerHTML = `<input type="text" class="editable-cell" data-field="CAS" data-id="${product.id}" value="${escapeHtml(product.CAS || '')}" style="color: #37352f !important; -webkit-text-fill-color: #37352f !important;">`;
+                const inputCas = tdCas.querySelector('input');
+                setTimeout(() => {
+                    if (inputCas) {
+                        inputCas.style.color = '#37352f';
+                        inputCas.style.webkitTextFillColor = '#37352f';
+                        inputCas.style.setProperty('color', '#37352f', 'important');
+                        inputCas.style.setProperty('-webkit-text-fill-color', '#37352f', 'important');
+                    }
+                }, 0);
+
+                // MW cell
+                const tdMw = document.createElement('td');
+                tdMw.innerHTML = `<input type="text" class="editable-cell" data-field="MW" data-id="${product.id}" value="${escapeHtml(product.MW || '')}" style="color: #37352f !important; -webkit-text-fill-color: #37352f !important;">`;
+                const inputMw = tdMw.querySelector('input');
+                setTimeout(() => {
+                    if (inputMw) {
+                        inputMw.style.color = '#37352f';
+                        inputMw.style.webkitTextFillColor = '#37352f';
+                        inputMw.style.setProperty('color', '#37352f', 'important');
+                        inputMw.style.setProperty('-webkit-text-fill-color', '#37352f', 'important');
+                    }
+                }, 0);
+
                 // Actions cell
                 const tdActions = document.createElement('td');
                 const btnDelete = document.createElement('button');
@@ -5051,6 +5085,8 @@
                 tr.appendChild(tdProduct);
                 tr.appendChild(tdIngredients);
                 tr.appendChild(tdSku);
+                tr.appendChild(tdCas);
+                tr.appendChild(tdMw);
                 tr.appendChild(tdActions);
                 
                 tbody.appendChild(tr);
@@ -5214,7 +5250,9 @@
             const newProduct = {
                 Product: 'New Product',
                 Ingredients: '',
-                SKU: ''
+                SKU: '',
+                CAS: '',
+                MW: ''
             };
             
             try {
@@ -7461,10 +7499,26 @@
                 tdSku.style.fontWeight = '600';
                 tdSku.textContent = product.SKU || '-';
 
+                // CAS cell
+                const tdCas = document.createElement('td');
+                tdCas.style.padding = '12px';
+                tdCas.style.fontSize = '13px';
+                tdCas.style.color = '#787774';
+                tdCas.textContent = product.CAS || '-';
+
+                // MW cell
+                const tdMw = document.createElement('td');
+                tdMw.style.padding = '12px';
+                tdMw.style.fontSize = '13px';
+                tdMw.style.color = '#787774';
+                tdMw.textContent = product.MW || '-';
+
                 tr.appendChild(tdCheckbox);
                 tr.appendChild(tdProduct);
                 tr.appendChild(tdIngredients);
                 tr.appendChild(tdSku);
+                tr.appendChild(tdCas);
+                tr.appendChild(tdMw);
                 tbody.appendChild(tr);
             });
         }
@@ -8455,6 +8509,18 @@
                                 <option value="">-- Select column --</option>
                             </select>
                         </div>
+                        <div class="import-mapping-item">
+                            <div class="import-mapping-label">CAS Number *</div>
+                            <select id="mappingCas" class="import-mapping-select">
+                                <option value="">-- Select column --</option>
+                            </select>
+                        </div>
+                        <div class="import-mapping-item">
+                            <div class="import-mapping-label">Molecular Weight *</div>
+                            <select id="mappingMw" class="import-mapping-select">
+                                <option value="">-- Select column --</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 
@@ -8515,6 +8581,8 @@
                                 <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e9e9e7; font-weight: 600; font-size: 13px;">Product Name</th>
                                 <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e9e9e7; font-weight: 600; font-size: 13px;">Ingredients</th>
                                 <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e9e9e7; font-weight: 600; font-size: 13px;">SKU</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e9e9e7; font-weight: 600; font-size: 13px;">CAS</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e9e9e7; font-weight: 600; font-size: 13px;">M.W.</th>
                             </tr>
                         </thead>
                         <tbody id="productSelectionTableBody">

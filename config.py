@@ -43,10 +43,10 @@ DATABASES_DIR = BASE_DIR / "databases"  # Always use local (in git repo)
 DATABASES_DIR.mkdir(exist_ok=True)
 
 # Required placeholders in template
-REQUIRED_PLACEHOLDERS = ["product_name", "ingredients", "sku"]
+REQUIRED_PLACEHOLDERS = ["product_name", "ingredients", "sku", "cas", "mw"]
 
 # Export settings
-PNG_DPI = 300
+PNG_DPI = 2400
 PDF_VECTOR_MODE = True
 
 # Batch processing

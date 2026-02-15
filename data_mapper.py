@@ -57,12 +57,13 @@ class DataMapper:
                         value = row.get(original_col, '').strip()
                         product[normalized_col] = value
                     
-                    # Validate required fields
+                    # Validate required fields (cas, mw are optional)
+                    optional_fields = {'cas', 'mw'}
                     missing = []
                     for field in config.REQUIRED_PLACEHOLDERS:
-                        if not product.get(field):
+                        if field not in optional_fields and not product.get(field):
                             missing.append(field)
-                    
+
                     if missing:
                         raise DataMapperError(
                             f"Row {row_num}: Missing required fields: {', '.join(missing)}"
@@ -98,9 +99,10 @@ class DataMapper:
                 self.load_csv()
             
             errors = []
+            optional_fields = {'cas', 'mw'}
             for idx, product in enumerate(self.products, start=1):
                 for field in config.REQUIRED_PLACEHOLDERS:
-                    if not product.get(field):
+                    if field not in optional_fields and not product.get(field):
                         errors.append(f"Product {idx}: Missing {field}")
             
             return len(errors) == 0, errors

@@ -60,9 +60,14 @@ class TemplateParser:
             namespaces = {'svg': 'http://www.w3.org/2000/svg', '': 'http://www.w3.org/2000/svg'}
             placeholders = {}
 
+            # cas and mw are optional placeholders
+            optional_placeholders = {'cas', 'mw'}
             for placeholder in config.REQUIRED_PLACEHOLDERS:
                 candidates = root.findall(f".//*[@data-placeholder='{placeholder}']", namespaces)
                 if not candidates:
+                    if placeholder in optional_placeholders:
+                        logger.info(f"Optional placeholder '{placeholder}' not found in template - skipping")
+                        continue
                     raise TemplateParseError(
                         f"Brak elementu z data-placeholder='{placeholder}'. "
                         "Przekonwertowany plik AI musi zawierać placeholdery."
@@ -143,6 +148,7 @@ class TemplateParser:
             tree = etree.parse(str(self.template_path))
             root = tree.getroot()
             ns = root.nsmap.get(None, 'http://www.w3.org/2000/svg')
+            optional_placeholders = {'cas', 'mw'}
 
             # Remember existing placeholders before cleanup so we can preserve them if needed.
             existing_placeholders = {}
@@ -260,7 +266,10 @@ class TemplateParser:
 
             # Ensure required placeholders exist. In fallback mode the UI usually marks only
             # product_name + ingredients, so we auto-resolve SKU if missing.
-            missing_required = [ph for ph in config.REQUIRED_PLACEHOLDERS if ph not in placeholders]
+            missing_required = [ph for ph in config.REQUIRED_PLACEHOLDERS if ph not in placeholders and ph not in optional_placeholders]
+            missing_optional = [ph for ph in config.REQUIRED_PLACEHOLDERS if ph not in placeholders and ph in optional_placeholders]
+            if missing_optional:
+                logger.info(f"[PositionParse] Optional placeholders not found: {missing_optional} - skipping")
             if missing_required:
                 logger.warning(f"[PositionParse] Missing placeholders after area matching: {missing_required}")
 
@@ -321,7 +330,7 @@ class TemplateParser:
 
             # Fail fast when required placeholders are unresolved - generating with partial tags
             # produces visually broken labels (mixed old+new text).
-            unresolved = [ph for ph in config.REQUIRED_PLACEHOLDERS if ph not in placeholders]
+            unresolved = [ph for ph in config.REQUIRED_PLACEHOLDERS if ph not in placeholders and ph not in optional_placeholders]
             if unresolved:
                 raise TemplateParseError(
                     "Missing required placeholders after position matching: "
@@ -502,8 +511,6 @@ class TemplateParser:
             'DISTRIBUTED BY',
             'CONTACT:',
             'ADDRESS:',
-            'CAS:',
-            'M.W.:',
             'EXPIRATION DATE',
         )
 
@@ -573,8 +580,6 @@ class TemplateParser:
             'DISTRIBUTED BY',
             'CONTACT:',
             'ADDRESS:',
-            'CAS:',
-            'M.W.:',
         )
         return not any(token in normalized for token in disallowed)
 
