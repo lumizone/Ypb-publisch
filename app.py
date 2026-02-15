@@ -3603,9 +3603,9 @@ def _generate_labels_svg_fallback(job_id, tracking_id, template_path, products, 
                     'percentage': int(((i + 1) / len(products)) * 100)
                 })
 
-        # Create ZIP
+        # Create ZIP in output_dir (persistent, downloadable)
         zip_filename = f"labels_{job_id}.zip"
-        zip_path = config.TEMP_DIR / zip_filename
+        zip_path = output_dir / zip_filename
 
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for label in labels:
@@ -3951,9 +3951,9 @@ def _generate_labels_task(
                     'percentage': int(((i + 1) / len(products)) * 100)
                 })
 
-        # Create ZIP file in temp/ (auto-cleanup, no archive)
+        # Create ZIP file in output_dir (persistent, downloadable)
         zip_filename = f"labels_{job_id}.zip"
-        zip_path = config.TEMP_DIR / zip_filename
+        zip_path = output_dir / zip_filename
 
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for label in labels:
@@ -4478,9 +4478,9 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                     logger.error(f"Mockup generation error: {e}")
                     errors.append(str(e))
 
-        # Create ZIP in temp/ (auto-cleanup, no archive)
+        # Create ZIP in output_dir (persistent, downloadable)
         zip_filename = f"mockups_{job_id}.zip"
-        zip_path = config.TEMP_DIR / zip_filename
+        zip_path = output_dir / zip_filename
 
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for mockup in mockups:
@@ -5002,8 +5002,8 @@ def generate_batch_mockups():
                     errors.append(f"{sku}: {str(e)}")
                     continue
             
-            # Create ZIP with all mockups
-            zip_path = config.TEMP_DIR / f"batch_mockups_{job_id}.zip"
+            # Create ZIP with all mockups in OUTPUT_DIR (persistent, downloadable)
+            zip_path = config.OUTPUT_DIR / f"batch_mockups_{job_id}.zip"
             try:
                 import zipfile
                 with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
