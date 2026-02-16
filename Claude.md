@@ -1,6 +1,6 @@
 # YPBv2 - Label & Mockup Generator
 
-**Status**: ✅ Production Ready (15 lutego 2026)
+**Status**: ✅ Production Ready (16 lutego 2026)
 **Lokalizacja**: `/Users/lukasz/YPBv2`
 **Port**: http://localhost:8000
 **Railway**: https://ypbv2.up.railway.app (8 CPU / 8GB RAM)
@@ -8,6 +8,98 @@
 ---
 
 ## 🎯 AKTUALNY STAN APLIKACJI
+
+### ✅ ZIP SVG+JPG Only + Mask Transparency Fix (16.02.2026)
+
+**Cel**: ZIP zawiera tylko SVG + JPG (usunięto PNG i PDF), naprawa przezroczystości masek przy wysokim DPI
+
+---
+
+#### 1. ZIP Contents: Only SVG + JPG
+
+**Problem**: ZIP zawierał PNG i PDF - user chce TYLKO SVG + JPG (+ mockup)
+
+**Rozwiązanie**: Filtrowanie plików w ZIP we wszystkich pipeline'ach
+
+**Zmienione miejsca:**
+- `app.py:3958-3968` - Main pipeline ZIP: filtr `svg+jpg` only
+- `app.py:3610-3617` - SVG fallback ZIP: filtr `svg+jpg` only
+- `app.py:4689` - Combined ZIP regex: `svg|jpg` (było: `svg|png|jpg|jpeg|pdf`)
+- `renderer.py:render_all_formats()` - zwraca tylko `{'svg', 'jpg'}` (usunięto PDF)
+- `batch_processor.py:92-94` - usunięto `'pdf'` z return dict
+
+**Rezultat**: ZIP zawiera TYLKO `YPB.xxx.svg` + `YPB.xxx.jpg` per SKU
+
+---
+
+#### 2. CairoSVG Mask Transparency Fix
+
+**Problem**: CairoSVG renderuje `<mask>` elementy z szerszym gradientem przy wyższych rozdzielczościach → washed-out edges na logo
+
+**Root cause**: SVG zawiera `<mask id="mask_3">` z embedded 1080x1080 PNG luminance mask. Przy bezpośrednim renderze do 4200x1800 (via `output_width`), CairoSVG rozszerza gradient maski → prawa strona lewego logo jest washed out (szara zamiast czarnej)
+
+**Rozwiązanie**: Render at native SVG size → upscale with PIL LANCZOS
+```python
+# renderer.py:render_png()
+# 1. Render at native size (1181x506) - masks render correctly
+cairosvg.svg2png(url=str(svg_path), write_to=str(temp_png), dpi=dpi)
+# 2. Add white background
+bg = Image.new('RGB', img.size, (255, 255, 255))
+bg.paste(img, mask=img.split()[-1])
+# 3. Upscale to target DPI dimensions (4200x1800)
+img.resize((target_width, target_height), Image.LANCZOS)
+```
+
+**Zastosowane we wszystkich pipeline'ach:**
+- `renderer.py:68-130` - Main render pipeline
+- `app.py:3882-3912` - Mockup PNG generation
+- `ai_converter.py:1331-1346` - Hybrid fallback
+
+**Kluczowe**: `target_width = svg_w * PNG_DPI / 675` (675 = AI converter base DPI)
+
+**Rezultat**: Logo pixel-perfect, zero washed-out edges, 4200x1800 @ 2400 DPI
+
+---
+
+#### 3. PDF Removed from Pipeline
+
+**Problem**: PDF nie jest potrzebny w output
+
+**Rozwiązanie**: Usunięto generowanie PDF z `renderer.render_all_formats()` i kopiowanie PDF w `app.py`
+
+**Rezultat**: Szybsze generowanie (brak konwersji SVG→PDF), mniejsze pliki
+
+---
+
+#### 4. Hybrid Fallback JPG DPI
+
+**Problem**: Hybrid fallback JPG nie miał metadanych DPI
+
+**Rozwiązanie**: `ai_converter.py:1431` - dodano `dpi=(config.PNG_DPI, config.PNG_DPI)` do `img.save()`
+
+---
+
+#### Pliki zmienione:
+- `renderer.py` - native render + LANCZOS upscale, removed PDF from render_all_formats
+- `app.py` - ZIP filters (svg+jpg only), mockup PNG native render, removed PDF copy
+- `ai_converter.py` - hybrid fallback native render + DPI metadata
+- `batch_processor.py` - removed PDF from result dict
+
+**Commit**: `caf138d` - pushed to GitHub
+
+**Status**: ✅ Zaimplementowane (16.02.2026)
+
+---
+
+### ✅ 8 Resize Handles for Label Selection (16.02.2026)
+
+**Cel**: 8 uchwytów do resize'owania areas (corners + edges) w Combined + Standalone generators
+
+**Commit**: `da37e56` - pushed to GitHub
+
+**Status**: ✅ Zaimplementowane
+
+---
 
 ### ✅ CAS Number & Molecular Weight Fields (14.02.2026)
 
@@ -561,7 +653,7 @@ New boundary_bottom: 449.97 - 23.44*0.85 - 3 = 427 (MW 2nd line would exceed →
    - Dla każdego produktu:
      - TextReplacer.replace() → podmiana tekstu w SVG
      - Renderer.render_all_formats() → PNG + JPG + PDF
-   - Output: SVG + PNG + PDF + JPG (identyczny z main flow)
+   - Output: SVG + JPG (identyczny z main flow)
    - ZERO wywołań Gemini do generowania obrazów!
 ```
 
@@ -598,7 +690,7 @@ New boundary_bottom: 449.97 - 23.44*0.85 - 3 = 427 (MW 2nd line would exceed →
 - User NIE widzi że to fallback
 - Areas działają tak samo jak na SVG (draggable, resizable)
 - Grafika/tło SVG **pixel-perfect** (nie regenerowane przez Gemini)
-- Output identyczny z main flow: SVG + PNG + PDF + JPG (wektor!)
+- Output identyczny z main flow: SVG + JPG
 - Zero API calls do Gemini na generowanie (tylko 1 OCR na początku)
 
 **Status**: ✅ Zaimplementowane
@@ -1326,7 +1418,7 @@ Graceful timeout: 30s → 60s
 - Upload template (SVG/AI)
 - Upload CSV database (65 produkty: YPB.211-283)
 - **5 data fields**: Product Name, Ingredients, SKU, **CAS Number**, **Molecular Weight** - NEW 14.02.2026
-- Batch generation: SVG + PNG (2400 DPI) + PDF + JPG
+- Batch generation: SVG + JPG (2400 DPI, 4200x1800)
 - Intelligent text wrapping & formatting
 - **Text alignment control** (LEFT/CENTER/RIGHT) - NEW 01.02.2026
 - **Auto-detection placeholders** (zero manual work) - ENHANCED 14.02.2026
@@ -1456,7 +1548,7 @@ tail -f /tmp/flask_app.log
 2. **Generate Labels** (Async)
    - 92 produkty z CSV
    - Formatowanie tekstu (auto-wrap, optimal font size)
-   - Output: SVG + PNG + PDF + JPG
+   - Output: SVG + JPG (2400 DPI)
    - ZIP: `labels_YYYYMMDD_HHMMSS.zip`
    - Czas: ~2 minuty
 
@@ -1483,9 +1575,7 @@ tail -f /tmp/flask_app.log
      ```
      YPB.100/
        ├── label.svg
-       ├── label.png
        ├── label.jpg
-       ├── label.pdf
        └── mockup.png
      ```
 
@@ -1537,6 +1627,15 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 ---
 
 ## 📝 CHANGELOG
+
+### 16 lutego 2026
+- ✅ **ZIP Only SVG+JPG** - usunięto PNG i PDF z ZIP (main, fallback, combined pipelines)
+- ✅ **Mask Transparency Fix** - CairoSVG render at native size + PIL LANCZOS upscale (fix washed-out logo edges)
+- ✅ **PDF Removed** - usunięto generowanie PDF z pipeline (renderer, app.py, batch_processor)
+- ✅ **Hybrid JPG DPI** - dodano metadane DPI do hybrid fallback JPG
+- ✅ **8 Resize Handles** - corners + edges dla areas w Combined + Standalone generators
+- ✅ **Pliki zmienione**: renderer.py, app.py, ai_converter.py, batch_processor.py, app_dashboard.html
+- ✅ **Commits**: `da37e56` (resize handles), `caf138d` (ZIP + transparency fix)
 
 ### 15 lutego 2026 (wieczór)
 - ✅ **FIX: ZIP Download Bug** - pliki ZIP teraz zapisywane w output_dir zamiast temp_dir
@@ -1682,5 +1781,5 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ---
 
-**Last Updated**: 15 lutego 2026 (commit: `98bacc6`)
-**Status**: ✅ Production Ready - ZIP Download Fix + CAS/MW Zone-Based Fitting + 2400 DPI + SKU Filenames + 5 Data Fields + Google Fonts (398) + Fontconfig (188 aliases)
+**Last Updated**: 16 lutego 2026 (commit: `caf138d`)
+**Status**: ✅ Production Ready - ZIP SVG+JPG Only + Mask Fix + 2400 DPI (4200x1800) + CAS/MW + SKU Filenames + 5 Data Fields + Google Fonts (398) + Fontconfig (188 aliases)
