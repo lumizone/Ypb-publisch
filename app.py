@@ -3611,6 +3611,8 @@ def _generate_labels_svg_fallback(job_id, tracking_id, template_path, products, 
             for label in labels:
                 sku_safe = label['sku'].replace('/', '_').replace('\\', '_')
                 for fmt, fpath in label.get('files', {}).items():
+                    if fmt not in ('svg', 'jpg'):
+                        continue
                     if Path(fpath).exists():
                         zf.write(fpath, f"labels/{sku_safe}/{Path(fpath).name}")
 
@@ -3873,15 +3875,41 @@ def _generate_labels_task(
                         # Get paths for all formats
                         svg_path = res.get('svg')
                         jpg_path = res.get('jpg')
-                        pdf_path = res.get('pdf')
 
                         # Convert SVG to PNG for mockup use
                         png_path = None
                         if svg_path and Path(svg_path).exists():
                             try:
                                 import cairosvg
+                                import re as _re
+                                from PIL import Image as PILImage
                                 png_path = Path(svg_path).with_suffix('.png')
-                                cairosvg.svg2png(url=str(svg_path), write_to=str(png_path), dpi=config.PNG_DPI)
+                                # Calculate target dimensions (SVG units are at 675 DPI base)
+                                _tw = _th = None
+                                try:
+                                    with open(svg_path, 'r') as _sf:
+                                        _hdr = _sf.read(2000)
+                                    _wm = _re.search(r'<svg[^>]*\swidth="([0-9.]+)"', _hdr)
+                                    _hm = _re.search(r'<svg[^>]*\sheight="([0-9.]+)"', _hdr)
+                                    if _wm and _hm:
+                                        _tw = int(round(float(_wm.group(1)) * config.PNG_DPI / 675))
+                                        _th = int(round(float(_hm.group(1)) * config.PNG_DPI / 675))
+                                except Exception:
+                                    pass
+                                # Render at native size (masks render correctly at native res)
+                                cairosvg.svg2png(url=str(svg_path), write_to=str(png_path),
+                                                 dpi=config.PNG_DPI)
+                                # Add white background + upscale to target DPI
+                                _img = PILImage.open(png_path)
+                                if _img.mode in ('RGBA', 'LA'):
+                                    _bg = PILImage.new('RGB', _img.size, (255, 255, 255))
+                                    _bg.paste(_img, mask=_img.split()[-1])
+                                    _img.close()
+                                    _img = _bg
+                                if _tw and _th and _img.size != (_tw, _th):
+                                    _img = _img.resize((_tw, _th), PILImage.LANCZOS)
+                                _img.save(str(png_path), 'PNG', dpi=(config.PNG_DPI, config.PNG_DPI))
+                                _img.close()
                             except Exception as e:
                                 logger.warning(f"Failed to convert SVG to PNG: {e}")
 
@@ -3900,13 +3928,7 @@ def _generate_labels_task(
                             shutil.copy(png_path, png_output)
                             files_copied['png'] = str(png_output)
 
-                        # Copy PDF
-                        if pdf_path and Path(pdf_path).exists():
-                            pdf_output = output_dir / f"{sku_safe}.pdf"
-                            shutil.copy(pdf_path, pdf_output)
-                            files_copied['pdf'] = str(pdf_output)
-
-                        # Copy JPG as fallback
+                        # Copy JPG
                         if jpg_path and Path(jpg_path).exists():
                             jpg_output = output_dir / f"{sku_safe}.jpg"
                             shutil.copy(jpg_path, jpg_output)
@@ -3958,9 +3980,11 @@ def _generate_labels_task(
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for label in labels:
                 sku = label['sku'].replace('/', '_').replace('\\', '_')
-                # Add all available file formats to ZIP in SKU folder
+                # Add only SVG + JPG to ZIP (no PNG/PDF)
                 files_dict = label.get('files', {})
                 for format_type, file_path in files_dict.items():
+                    if format_type not in ('svg', 'jpg'):
+                        continue
                     if Path(file_path).exists():
                         # Structure: labels/SKU/filename.ext
                         filename = Path(file_path).name
@@ -4686,7 +4710,7 @@ def download_combined_all(labels_job_id, mockups_job_id):
         # Pattern to extract SKU from filename:
         # - New format: YPB.100.svg -> YPB.100
         # - Mockup format: mockup_YPB.100.png -> YPB.100
-        sku_pattern_label = re.compile(r'^([A-Z]+\.\d+)\.(svg|png|jpg|jpeg|pdf)$', re.IGNORECASE)
+        sku_pattern_label = re.compile(r'^([A-Z]+\.\d+)\.(svg|jpg)$', re.IGNORECASE)
         sku_pattern_mockup = re.compile(r'^mockup_([A-Z]+\.\d+)\.png$', re.IGNORECASE)
 
         # Collect label files (new format: YPB.100.svg)

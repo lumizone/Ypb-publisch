@@ -1328,17 +1328,24 @@ class AIConverter:
         try:
             svg_w = int(hybrid_base['svg_width'])
             svg_h = int(hybrid_base['svg_height'])
-            cairosvg.svg2png(url=str(svg_path), write_to=str(png_path), output_width=svg_w, output_height=svg_h)
+            # Render at native size (CairoSVG masks render correctly at native res)
+            # then upscale later with PIL LANCZOS
+            AI_CONVERTER_DPI = 675
+            target_w = int(round(svg_w * config.PNG_DPI / AI_CONVERTER_DPI))
+            target_h = int(round(svg_h * config.PNG_DPI / AI_CONVERTER_DPI))
+            cairosvg.svg2png(url=str(svg_path), write_to=str(png_path))
         except Exception as e:
             logger.error(f"[Hybrid PIL] SVG→PNG render failed for {sku}: {e}")
             return None
 
-        # Load and add white background
+        # Load, add white background, and upscale to target DPI
         img = Image.open(png_path)
         if img.mode == 'RGBA':
             bg = Image.new('RGB', img.size, (255, 255, 255))
             bg.paste(img, mask=img.split()[3])
             img = bg
+        if target_w and target_h and img.size != (target_w, target_h):
+            img = img.resize((target_w, target_h), Image.LANCZOS)
 
         draw = ImageDraw.Draw(img)
         scale = hybrid_base['scale']
@@ -1428,25 +1435,14 @@ class AIConverter:
         # JPG
         jpg_path = output_dir / f'label_{sku_safe}.jpg'
         try:
-            img.convert('RGB').save(str(jpg_path), 'JPEG', quality=95)
+            img.convert('RGB').save(str(jpg_path), 'JPEG', quality=95, dpi=(config.PNG_DPI, config.PNG_DPI))
         except Exception as e:
             logger.warning(f"[Hybrid PIL] JPG failed for {sku}: {e}")
             jpg_path = None
 
-        # PDF from PNG
-        pdf_path = output_dir / f'label_{sku_safe}.pdf'
-        try:
-            img_for_pdf = Image.open(png_path)
-            img_for_pdf.save(str(pdf_path), 'PDF', resolution=300)
-        except Exception as e:
-            logger.warning(f"[Hybrid PIL] PDF failed for {sku}: {e}")
-            pdf_path = None
-
         result = {'svg': str(svg_path), 'png': str(png_path)}
         if jpg_path and jpg_path.exists():
             result['jpg'] = str(jpg_path)
-        if pdf_path and pdf_path.exists():
-            result['pdf'] = str(pdf_path)
 
         logger.info(f"[Hybrid PIL] ✓ {sku}: {list(result.keys())}")
         return result

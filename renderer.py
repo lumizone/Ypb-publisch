@@ -77,11 +77,32 @@ class Renderer:
                 import tempfile
                 temp_png = output_path.with_suffix('.tmp.png')
 
+                # Render at NATIVE SVG size first, then upscale with PIL.
+                # CairoSVG renders <mask> elements with wider gradient at higher
+                # resolutions, causing washed-out edges. Rendering at native size
+                # then upscaling preserves correct mask boundaries.
+                import re
+                target_width = None
+                target_height = None
+                try:
+                    with open(svg_path, 'r') as f:
+                        svg_header = f.read(2000)
+                    w_match = re.search(r'<svg[^>]*\swidth="([0-9.]+)"', svg_header)
+                    h_match = re.search(r'<svg[^>]*\sheight="([0-9.]+)"', svg_header)
+                    if w_match and h_match:
+                        svg_w = float(w_match.group(1))
+                        svg_h = float(h_match.group(1))
+                        AI_CONVERTER_DPI = 675
+                        target_width = int(round(svg_w * dpi / AI_CONVERTER_DPI))
+                        target_height = int(round(svg_h * dpi / AI_CONVERTER_DPI))
+                        logger.info(f"SVG {svg_w:.1f}x{svg_h:.1f} → PNG {target_width}x{target_height} @ {dpi} DPI")
+                except Exception as e:
+                    logger.warning(f"Could not parse SVG dimensions: {e}")
+
+                # Render at native SVG size (no output_width/height)
                 cairosvg.svg2png(
                     url=str(svg_path),
                     write_to=str(temp_png),
-                    output_width=None,
-                    output_height=None,
                     dpi=dpi
                 )
 
@@ -89,15 +110,17 @@ class Renderer:
                     # Add WHITE background using PIL
                     img = Image.open(temp_png)
                     if img.mode in ('RGBA', 'LA'):
-                        # Create white background
                         background = Image.new('RGB', img.size, (255, 255, 255))
-                        # Paste image with alpha channel as mask
                         background.paste(img, mask=img.split()[-1] if 'A' in img.mode else None)
                         img = background
                     elif img.mode != 'RGB':
                         img = img.convert('RGB')
 
-                    # Save with white background
+                    # Upscale to target DPI dimensions using LANCZOS
+                    if target_width and target_height and img.size != (target_width, target_height):
+                        img = img.resize((target_width, target_height), Image.LANCZOS)
+
+                    # Save with DPI metadata
                     img.save(output_path, 'PNG', dpi=(dpi, dpi))
 
                     # Clean up temp file
@@ -203,24 +226,21 @@ class Renderer:
             raise RenderError(f"JPG rendering failed: {e}")
     
     def render_all_formats(self, svg_path: Path, base_output_path: Path) -> Dict[str, Path]:
-        """Render SVG, JPG, and PDF versions. Returns dict with 'svg', 'jpg', 'pdf'."""
+        """Render SVG and JPG versions. Returns dict with 'svg', 'jpg'."""
         jpg_path = base_output_path.with_suffix('.jpg')
-        pdf_path = base_output_path.with_suffix('.pdf')
-        
+
         # Keep SVG (copy it)
         svg_output_path = base_output_path.with_suffix('.svg')
         if svg_path != svg_output_path:
             import shutil
             shutil.copy2(svg_path, svg_output_path)
-        
-        # Render JPG and PDF
+
+        # Render JPG
         self.render_jpg(svg_path, jpg_path)
-        self.render_pdf(svg_path, pdf_path)
-        
+
         return {
             'svg': svg_output_path,
             'jpg': jpg_path,
-            'pdf': pdf_path
         }
     
     def validate_svg(self, svg_path: Path) -> bool:

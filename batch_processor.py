@@ -90,8 +90,7 @@ class BatchProcessor:
                 'sku': sku,
                 'product_name': product_name,
                 'svg': files['svg'],
-                'jpg': files['jpg'],
-                'pdf': files['pdf']
+                'jpg': files['jpg']
             }
             
         except (TextReplacerError, RenderError) as e:
