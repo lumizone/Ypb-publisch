@@ -1212,11 +1212,15 @@
                                       stroke-width="2" 
                                       stroke-dasharray="5,5"
                                       style="pointer-events: all; cursor: move;"></rect>
-                                <!-- Resize handles -->
+                                <!-- Resize handles: 4 corners + 4 sides -->
                                 <circle id="labelHandleTLCombined" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: nw-resize; display: none;"></circle>
                                 <circle id="labelHandleTRCombined" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: ne-resize; display: none;"></circle>
                                 <circle id="labelHandleBLCombined" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: sw-resize; display: none;"></circle>
                                 <circle id="labelHandleBRCombined" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: se-resize; display: none;"></circle>
+                                <circle id="labelHandleTCCombined" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: n-resize; display: none;"></circle>
+                                <circle id="labelHandleBCCombined" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: s-resize; display: none;"></circle>
+                                <circle id="labelHandleLCCombined" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: w-resize; display: none;"></circle>
+                                <circle id="labelHandleRCCombined" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: e-resize; display: none;"></circle>
                             </svg>
                         </div>
                         <div style="margin-top: 12px;">
@@ -1224,7 +1228,7 @@
                                 Reset Selection
                             </button>
                             <div style="margin-top: 8px; font-size: 12px; color: #787774;">
-                                <strong>Instructions:</strong> Drag the rectangle to move, drag corners to resize. This area will be sent to AI for mockup generation.
+                                <strong>Instructions:</strong> Drag the rectangle to move, drag corners or side handles to resize. This area will be sent to AI for mockup generation.
                             </div>
                         </div>
                         <!-- Hidden input for crop coordinates -->
@@ -1697,10 +1701,15 @@
                                       stroke-dasharray="5,5"
                                       style="pointer-events: all; cursor: move;"></rect>
                                 <!-- Resize handles -->
+                                <!-- Resize handles: 4 corners + 4 sides -->
                                 <circle id="labelHandleTLSingle" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: nw-resize; display: none;"></circle>
                                 <circle id="labelHandleTRSingle" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: ne-resize; display: none;"></circle>
                                 <circle id="labelHandleBLSingle" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: sw-resize; display: none;"></circle>
                                 <circle id="labelHandleBRSingle" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: se-resize; display: none;"></circle>
+                                <circle id="labelHandleTCSingle" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: n-resize; display: none;"></circle>
+                                <circle id="labelHandleBCSingle" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: s-resize; display: none;"></circle>
+                                <circle id="labelHandleLCSingle" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: w-resize; display: none;"></circle>
+                                <circle id="labelHandleRCSingle" cx="0" cy="0" r="6" fill="#4285f4" stroke="#ffffff" stroke-width="2" style="pointer-events: all; cursor: e-resize; display: none;"></circle>
                             </svg>
                         </div>
                         <div style="margin-top: 12px;">
@@ -5750,17 +5759,18 @@
         
         function setupLabelCropListenersSingle() {
             const rect = document.getElementById('labelCropRectSingle');
-            const handles = ['TL', 'TR', 'BL', 'BR'].map(pos => document.getElementById(`labelHandle${pos}Single`));
+            const handleNames = ['TL', 'TR', 'BL', 'BR', 'TC', 'BC', 'LC', 'RC'];
+            const handles = handleNames.map(pos => document.getElementById(`labelHandle${pos}Single`));
             const overlay = document.getElementById('labelCropOverlaySingle');
-            
+
             if (!rect || !overlay) return;
-            
+
             // Rectangle dragging
             rect.addEventListener('mousedown', (e) => {
                 if (e.button !== 0) return;
                 e.preventDefault();
                 e.stopPropagation();
-                
+
                 labelSelectionDraggingSingle = true;
                 const pt = getSVGPoint(overlay, e.clientX, e.clientY);
                 labelSelectionDragStartSingle = {
@@ -5770,17 +5780,17 @@
                     rectY: labelSelectionAreaSingle.y
                 };
             });
-            
-            // Handle dragging
+
+            // Handle dragging (8 handles: 4 corners + 4 sides)
             handles.forEach((handle, idx) => {
                 if (!handle) return;
                 handle.addEventListener('mousedown', (e) => {
                     if (e.button !== 0) return;
                     e.preventDefault();
                     e.stopPropagation();
-                    
+
                     labelSelectionResizingSingle = true;
-                    labelSelectionResizeHandleSingle = ['TL', 'TR', 'BL', 'BR'][idx];
+                    labelSelectionResizeHandleSingle = handleNames[idx];
                     const pt = getSVGPoint(overlay, e.clientX, e.clientY);
                     labelSelectionDragStartSingle = {
                         x: pt.x,
@@ -5874,14 +5884,18 @@
         
         function updateLabelCropHandlesSingle() {
             if (!labelSelectionAreaSingle) return;
-            
+
             const { x, y, width, height } = labelSelectionAreaSingle;
-            
+
             const handles = {
                 TL: { cx: x, cy: y },
                 TR: { cx: x + width, cy: y },
                 BL: { cx: x, cy: y + height },
-                BR: { cx: x + width, cy: y + height }
+                BR: { cx: x + width, cy: y + height },
+                TC: { cx: x + width / 2, cy: y },
+                BC: { cx: x + width / 2, cy: y + height },
+                LC: { cx: x, cy: y + height / 2 },
+                RC: { cx: x + width, cy: y + height / 2 }
             };
             
             Object.entries(handles).forEach(([pos, coords]) => {
@@ -6683,12 +6697,16 @@
             const displayW = labelSelectionAreaCombined.width * scaleX;
             const displayH = labelSelectionAreaCombined.height * scaleY;
             
-            // Update handles
+            // Update handles (4 corners + 4 sides)
             const handles = {
                 'TL': { cx: displayX, cy: displayY },
                 'TR': { cx: displayX + displayW, cy: displayY },
                 'BL': { cx: displayX, cy: displayY + displayH },
-                'BR': { cx: displayX + displayW, cy: displayY + displayH }
+                'BR': { cx: displayX + displayW, cy: displayY + displayH },
+                'TC': { cx: displayX + displayW / 2, cy: displayY },
+                'BC': { cx: displayX + displayW / 2, cy: displayY + displayH },
+                'LC': { cx: displayX, cy: displayY + displayH / 2 },
+                'RC': { cx: displayX + displayW, cy: displayY + displayH / 2 }
             };
             
             Object.entries(handles).forEach(([name, pos]) => {
@@ -6713,8 +6731,8 @@
             // Drag rectangle
             rect.addEventListener('mousedown', startLabelSelectionDragCombined);
             
-            // Resize handles
-            ['TL', 'TR', 'BL', 'BR'].forEach((name, index) => {
+            // Resize handles (4 corners + 4 sides)
+            ['TL', 'TR', 'BL', 'BR', 'TC', 'BC', 'LC', 'RC'].forEach((name, index) => {
                 const handle = document.getElementById(`labelHandle${name}Combined`);
                 if (handle) {
                     handle.addEventListener('mousedown', (e) => {
@@ -6826,27 +6844,41 @@
             let newW = labelSelectionDragStartCombined.rectW;
             let newH = labelSelectionDragStartCombined.rectH;
             
-            // Handle resize based on which corner (0=TL, 1=TR, 2=BL, 3=BR)
+            // Handle resize based on which handle (0-3: corners, 4-7: sides)
             switch (labelSelectionResizeHandleCombined) {
-                case 0: // Top-left
+                case 0: // Top-left corner
                     newX = labelSelectionDragStartCombined.rectX + deltaX;
                     newY = labelSelectionDragStartCombined.rectY + deltaY;
                     newW = labelSelectionDragStartCombined.rectW - deltaX;
                     newH = labelSelectionDragStartCombined.rectH - deltaY;
                     break;
-                case 1: // Top-right
+                case 1: // Top-right corner
                     newY = labelSelectionDragStartCombined.rectY + deltaY;
                     newW = labelSelectionDragStartCombined.rectW + deltaX;
                     newH = labelSelectionDragStartCombined.rectH - deltaY;
                     break;
-                case 2: // Bottom-left
+                case 2: // Bottom-left corner
                     newX = labelSelectionDragStartCombined.rectX + deltaX;
                     newW = labelSelectionDragStartCombined.rectW - deltaX;
                     newH = labelSelectionDragStartCombined.rectH + deltaY;
                     break;
-                case 3: // Bottom-right
+                case 3: // Bottom-right corner
                     newW = labelSelectionDragStartCombined.rectW + deltaX;
                     newH = labelSelectionDragStartCombined.rectH + deltaY;
+                    break;
+                case 4: // Top-center (height only)
+                    newY = labelSelectionDragStartCombined.rectY + deltaY;
+                    newH = labelSelectionDragStartCombined.rectH - deltaY;
+                    break;
+                case 5: // Bottom-center (height only)
+                    newH = labelSelectionDragStartCombined.rectH + deltaY;
+                    break;
+                case 6: // Left-center (width only)
+                    newX = labelSelectionDragStartCombined.rectX + deltaX;
+                    newW = labelSelectionDragStartCombined.rectW - deltaX;
+                    break;
+                case 7: // Right-center (width only)
+                    newW = labelSelectionDragStartCombined.rectW + deltaX;
                     break;
             }
             
