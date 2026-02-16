@@ -1247,15 +1247,21 @@ def remove_background_with_reference(result_image, vial_reference, label_referen
                 vial_alpha = vial_array[:, :, 3]
                 
                 # Oblicz różnicę kolorów między wynikiem a oryginalną fiolką
-                color_diff = np.sqrt(np.sum((rgb - vial_rgb) ** 2, axis=2))
+                # Cast to float to avoid uint8 overflow in subtraction
+                color_diff = np.sqrt(np.sum((rgb.astype(np.float32) - vial_rgb.astype(np.float32)) ** 2, axis=2))
                 
                 # Określ które obszary to prawdopodobnie fiolka (nie tło)
                 # Jeśli piksel jest podobny do oryginalnej fiolki (różnica < 100), to to jest fiolka
                 is_vial_part = color_diff < 100
-                
-                # Jeśli w oryginalnej fiolce jest nieprzezroczysty piksel, to w wyniku też powinien być
-                vial_visible = vial_alpha > 128
-                is_foreground = is_vial_part | vial_visible
+
+                # Only use vial alpha as foreground indicator if vial actually has transparency
+                # (uploaded photos are fully opaque → vial_alpha > 128 everywhere → would block ALL removal)
+                has_transparency = np.mean(vial_alpha < 128) > 0.01  # At least 1% transparent
+                if has_transparency:
+                    vial_visible = vial_alpha > 128
+                    is_foreground = is_vial_part | vial_visible
+                else:
+                    is_foreground = is_vial_part
                 
                 # NIE usuwaj części fiolki - usuń tylko tło które NIE jest częścią fiolki
                 background_to_remove = (is_background | checkerboard_mask) & ~is_foreground
