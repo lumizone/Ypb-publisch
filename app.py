@@ -4683,21 +4683,27 @@ def download_combined_all(labels_job_id, mockups_job_id):
         # Group files by SKU
         files_by_sku = defaultdict(list)
 
-        # Pattern to extract SKU from filename: label_YPB.100.svg -> YPB.100
-        sku_pattern = re.compile(r'(?:label|mockup)_([A-Z]+\.\d+)\.(svg|png|jpg|jpeg|pdf)$', re.IGNORECASE)
+        # Pattern to extract SKU from filename:
+        # - New format: YPB.100.svg -> YPB.100
+        # - Mockup format: mockup_YPB.100.png -> YPB.100
+        sku_pattern_label = re.compile(r'^([A-Z]+\.\d+)\.(svg|png|jpg|jpeg|pdf)$', re.IGNORECASE)
+        sku_pattern_mockup = re.compile(r'^mockup_([A-Z]+\.\d+)\.png$', re.IGNORECASE)
 
-        # Collect label files
-        for label_file in labels_dir.glob('label_*.*'):
-            match = sku_pattern.match(label_file.name)
+        # Collect label files (new format: YPB.100.svg)
+        for label_file in labels_dir.glob('*.*'):
+            # Skip mockup files if any
+            if label_file.name.startswith('mockup_'):
+                continue
+            match = sku_pattern_label.match(label_file.name)
             if match:
                 sku = match.group(1)
                 ext = match.group(2).lower()
                 # Store as (source_path, new_filename_in_zip)
                 files_by_sku[sku].append((label_file, f"label.{ext}"))
 
-        # Collect mockup files
+        # Collect mockup files (format: mockup_YPB.100.png)
         for mockup_file in mockups_dir.glob('mockup_*.png'):
-            match = sku_pattern.match(mockup_file.name)
+            match = sku_pattern_mockup.match(mockup_file.name)
             if match:
                 sku = match.group(1)
                 files_by_sku[sku].append((mockup_file, "mockup.png"))
