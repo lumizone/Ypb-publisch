@@ -7684,20 +7684,46 @@
             formData.append('tracking_id', trackingJobId);
 
             let jobId = null;
+            const labelStartTime = Date.now();
+            let lastLabelCount = 0;
+
+            function formatLabelElapsed(ms) {
+                const s = Math.floor(ms / 1000);
+                const m = Math.floor(s / 60);
+                const sec = s % 60;
+                return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+            }
 
             // Start polling for progress (checks for completion)
             const progressInterval = setInterval(async () => {
                 try {
                     const progressResponse = await fetch(`/api/generation-progress/${trackingJobId}`);
                     const progressData = await progressResponse.json();
+                    const elapsed = formatLabelElapsed(Date.now() - labelStartTime);
 
                     if (progressData.status === 'processing') {
                         // Update progress bar
                         const pct = progressData.percentage || 0;
+                        const current = progressData.current || 0;
+                        const total = progressData.total || 0;
                         progressFill.style.width = Math.max(pct, 5) + '%';
-                        const message = progressData.message || `${pct}%`;
-                        const counts = progressData.total ? ` (${progressData.current}/${progressData.total})` : '';
-                        progressText.textContent = message + counts + ` - ${Math.round(pct)}%`;
+
+                        if (current > lastLabelCount) {
+                            lastLabelCount = current;
+                        }
+
+                        if (current > 0 && current < total) {
+                            const avgTime = (Date.now() - labelStartTime) / current;
+                            const remaining = Math.round((total - current) * avgTime / 1000);
+                            const remMin = Math.floor(remaining / 60);
+                            const remSec = remaining % 60;
+                            const eta = remMin > 0 ? `~${remMin}m ${remSec}s left` : `~${remSec}s left`;
+                            progressText.textContent = `${progressData.message} - ${Math.round(pct)}% (${elapsed} elapsed, ${eta})`;
+                        } else if (current >= total && total > 0) {
+                            progressText.textContent = `${progressData.message} - ${elapsed} elapsed`;
+                        } else {
+                            progressText.textContent = `${progressData.message || 'Preparing...'} - ${elapsed} elapsed`;
+                        }
                     }
                     else if (progressData.status === 'completed') {
                         // Generation complete - fetch results
@@ -7721,7 +7747,7 @@
                         setTimeout(() => { progress.style.display = 'none'; }, 2000);
                     }
                     else if (progressData.status === 'unknown') {
-                        progressText.textContent = 'Preparing label generation...';
+                        progressText.textContent = `Preparing label generation... (${elapsed} elapsed)`;
                     }
                 } catch (e) {
                     // Ignore polling errors
