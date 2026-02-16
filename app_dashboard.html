@@ -7896,13 +7896,15 @@
             formData.append('labels_job_id', labelsJobIdCombined);
             formData.append('labels', JSON.stringify(generatedLabelsCombined));
             
-            // Add label crop data
+            // Add label crop data with template dimensions for scaling
             if (labelSelectionAreaCombined) {
                 formData.append('labelCropData', JSON.stringify({
                     x: Math.round(labelSelectionAreaCombined.x),
                     y: Math.round(labelSelectionAreaCombined.y),
                     width: Math.round(labelSelectionAreaCombined.width),
-                    height: Math.round(labelSelectionAreaCombined.height)
+                    height: Math.round(labelSelectionAreaCombined.height),
+                    templateWidth: labelImageOriginalSizeCombined.width,
+                    templateHeight: labelImageOriginalSizeCombined.height
                 }));
             }
             

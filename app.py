@@ -4373,18 +4373,34 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
                 label_image_cropped = label_image_original.copy()
 
                 if thread_crop_data:
-                    crop_x = int(thread_crop_data.get('x', 0))
-                    crop_y = int(thread_crop_data.get('y', 0))
-                    crop_width = int(thread_crop_data.get('width', label_image_cropped.width))
-                    crop_height = int(thread_crop_data.get('height', label_image_cropped.height))
+                    # Scale crop coordinates from template dimensions to generated label dimensions
+                    template_w = thread_crop_data.get('templateWidth', 0)
+                    template_h = thread_crop_data.get('templateHeight', 0)
+                    label_w = label_image_cropped.width
+                    label_h = label_image_cropped.height
 
-                    crop_x = max(0, min(crop_x, label_image_cropped.width - 1))
-                    crop_y = max(0, min(crop_y, label_image_cropped.height - 1))
-                    crop_width = min(crop_width, label_image_cropped.width - crop_x)
-                    crop_height = min(crop_height, label_image_cropped.height - crop_y)
+                    if template_w > 0 and template_h > 0 and (template_w != label_w or template_h != label_h):
+                        scale_x = label_w / template_w
+                        scale_y = label_h / template_h
+                        logger.info(f"[Thread {sku}] Scaling crop from template {template_w}x{template_h} to label {label_w}x{label_h} (scale: {scale_x:.2f}x{scale_y:.2f})")
+                        crop_x = int(round(thread_crop_data.get('x', 0) * scale_x))
+                        crop_y = int(round(thread_crop_data.get('y', 0) * scale_y))
+                        crop_width = int(round(thread_crop_data.get('width', template_w) * scale_x))
+                        crop_height = int(round(thread_crop_data.get('height', template_h) * scale_y))
+                    else:
+                        crop_x = int(thread_crop_data.get('x', 0))
+                        crop_y = int(thread_crop_data.get('y', 0))
+                        crop_width = int(thread_crop_data.get('width', label_w))
+                        crop_height = int(thread_crop_data.get('height', label_h))
+
+                    crop_x = max(0, min(crop_x, label_w - 1))
+                    crop_y = max(0, min(crop_y, label_h - 1))
+                    crop_width = min(crop_width, label_w - crop_x)
+                    crop_height = min(crop_height, label_h - crop_y)
 
                     if crop_width > 0 and crop_height > 0:
                         label_image_cropped = label_image_cropped.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
+                        logger.info(f"[Thread {sku}] Cropped label to {crop_width}x{crop_height} at ({crop_x},{crop_y})")
 
                 # Generate mockup - accept first success, retry once on failure
                 mockup_image = None
@@ -4968,18 +4984,34 @@ def generate_batch_mockups():
                         # Crop label if needed BEFORE retry loop
                         label_to_use = label_image.copy()
                         if label_crop_data:
-                            crop_x = int(label_crop_data.get('x', 0))
-                            crop_y = int(label_crop_data.get('y', 0))
-                            crop_width = int(label_crop_data.get('width', label_to_use.width))
-                            crop_height = int(label_crop_data.get('height', label_to_use.height))
+                            # Scale crop coordinates from template to generated label dimensions
+                            tpl_w = label_crop_data.get('templateWidth', 0)
+                            tpl_h = label_crop_data.get('templateHeight', 0)
+                            lbl_w = label_to_use.width
+                            lbl_h = label_to_use.height
 
-                            crop_x = max(0, min(crop_x, label_to_use.width - 1))
-                            crop_y = max(0, min(crop_y, label_to_use.height - 1))
-                            crop_width = min(crop_width, label_to_use.width - crop_x)
-                            crop_height = min(crop_height, label_to_use.height - crop_y)
+                            if tpl_w > 0 and tpl_h > 0 and (tpl_w != lbl_w or tpl_h != lbl_h):
+                                sx = lbl_w / tpl_w
+                                sy = lbl_h / tpl_h
+                                logger.info(f"Scaling crop from template {tpl_w}x{tpl_h} to label {lbl_w}x{lbl_h}")
+                                crop_x = int(round(label_crop_data.get('x', 0) * sx))
+                                crop_y = int(round(label_crop_data.get('y', 0) * sy))
+                                crop_width = int(round(label_crop_data.get('width', tpl_w) * sx))
+                                crop_height = int(round(label_crop_data.get('height', tpl_h) * sy))
+                            else:
+                                crop_x = int(label_crop_data.get('x', 0))
+                                crop_y = int(label_crop_data.get('y', 0))
+                                crop_width = int(label_crop_data.get('width', lbl_w))
+                                crop_height = int(label_crop_data.get('height', lbl_h))
+
+                            crop_x = max(0, min(crop_x, lbl_w - 1))
+                            crop_y = max(0, min(crop_y, lbl_h - 1))
+                            crop_width = min(crop_width, lbl_w - crop_x)
+                            crop_height = min(crop_height, lbl_h - crop_y)
 
                             if crop_width > 0 and crop_height > 0:
                                 label_to_use = label_to_use.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
+                                logger.info(f"Cropped label to {crop_width}x{crop_height} at ({crop_x},{crop_y})")
 
                         # Generate mockup - accept first success, retry once on failure
                         mockup_image = _generate_mockup_for_product_with_retry(
