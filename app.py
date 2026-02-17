@@ -3620,7 +3620,7 @@ def _generate_labels_svg_fallback(job_id, tracking_id, template_path, products, 
                     if fmt not in ('svg', 'jpg'):
                         continue
                     if Path(fpath).exists():
-                        zf.write(fpath, f"labels/{sku_safe}/{Path(fpath).name}")
+                        zf.write(fpath, f"Labels/{sku_safe}/{sku_safe}.{fmt}")
 
         logger.info(f"[Hybrid Fallback] Generated {len(labels)} labels, {len(errors)} errors")
 
@@ -3977,10 +3977,8 @@ def _generate_labels_task(
                     if format_type not in ('svg', 'jpg'):
                         continue
                     if Path(file_path).exists():
-                        # Structure: labels/SKU/filename.ext
-                        filename = Path(file_path).name
-                        zip_entry_path = f"labels/{sku}/{filename}"
-                        zf.write(file_path, zip_entry_path)
+                        # Structure: Labels/YPB.200/YPB.200.ext
+                        zf.write(file_path, f"Labels/{sku}/{sku}.{format_type}")
 
         logger.info(f"Generated {len(labels)} labels, {len(errors)} errors")
 
@@ -4517,7 +4515,9 @@ def _generate_mockups_from_labels_task(job_id, tracking_id, vial_bytes, labels, 
             for mockup in mockups:
                 mockup_file_path = output_dir / mockup['filename']
                 if mockup_file_path.exists():
-                    zf.write(mockup_file_path, mockup['filename'])
+                    # Structure: Mockups/YPB.200.png
+                    sku = mockup.get('sku', '').replace('/', '_').replace('\\', '_')
+                    zf.write(mockup_file_path, f"Mockups/{sku}.png")
 
         # Store results
         background_results[job_id] = {
@@ -4720,24 +4720,23 @@ def download_combined_all(labels_job_id, mockups_job_id):
         sku_pattern_label = re.compile(r'^([A-Z]+\.\d+)\.(svg|jpg)$', re.IGNORECASE)
         sku_pattern_mockup = re.compile(r'^mockup_([A-Z]+\.\d+)\.png$', re.IGNORECASE)
 
-        # Collect label files (new format: YPB.100.svg)
+        # Collect label files (format: YPB.100.svg, YPB.100.jpg)
         for label_file in labels_dir.glob('*.*'):
-            # Skip mockup files if any
             if label_file.name.startswith('mockup_'):
                 continue
             match = sku_pattern_label.match(label_file.name)
             if match:
                 sku = match.group(1)
                 ext = match.group(2).lower()
-                # Store as (source_path, new_filename_in_zip)
-                files_by_sku[sku].append((label_file, f"label.{ext}"))
+                # Store as (source_path, archive_path)
+                files_by_sku[sku].append((label_file, f"Labels/{sku}/{sku}.{ext}"))
 
         # Collect mockup files (format: mockup_YPB.100.png)
         for mockup_file in mockups_dir.glob('mockup_*.png'):
             match = sku_pattern_mockup.match(mockup_file.name)
             if match:
                 sku = match.group(1)
-                files_by_sku[sku].append((mockup_file, "mockup.png"))
+                files_by_sku[sku].append((mockup_file, f"Mockups/{sku}.png"))
 
         if not files_by_sku:
             return jsonify({'error': 'No files found to combine'}), 404
@@ -4751,9 +4750,7 @@ def download_combined_all(labels_job_id, mockups_job_id):
 
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for sku, files in sorted(files_by_sku.items()):
-                for source_path, zip_filename_in_archive in files:
-                    # Archive path: YPB.100/label.svg
-                    archive_path = f"{sku}/{zip_filename_in_archive}"
+                for source_path, archive_path in files:
                     zipf.write(source_path, archive_path)
                     logger.debug(f"Added to ZIP: {archive_path}")
 
@@ -5063,7 +5060,8 @@ def generate_batch_mockups():
                     for mockup in mockups:
                         mockup_file = output_dir / mockup['filename']
                         if mockup_file.exists():
-                            zipf.write(mockup_file, mockup['filename'])
+                            sku = mockup.get('sku', '').replace('/', '_').replace('\\', '_')
+                            zipf.write(mockup_file, f"Mockups/{sku}.png")
                 
                 logger.info(f"Created ZIP file: {zip_path}")
             except Exception as e:
