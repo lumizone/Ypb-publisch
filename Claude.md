@@ -9,6 +9,87 @@
 
 ## 🎯 AKTUALNY STAN APLIKACJI
 
+### ✅ Parallel Label Generation + ZIP Structure Fix (17.02.2026)
+
+**Cel**: Przyspieszenie generowania labels (~3.5x) + nowy format ZIP zgodny z wymaganiami klienta
+
+---
+
+#### 1. Parallel Label Generation (4 workers)
+
+**Problem**: Labels generowane sekwencyjnie (1 na raz) - ~2 min dla 91 produktów
+
+**Rozwiązanie**:
+- `ThreadPoolExecutor(max_workers=4)` zamiast sekwencyjnej pętli `for`
+- Thread-safety fix: `self._cas_mw_format` → lokalna zmienna `cas_mw_format` w `TextReplacer`
+- Thread-safe progress tracking z `threading.Lock()` + atomiczny counter
+- `as_completed()` dla real-time progress updates
+- Timeout 60s per label zachowany
+
+**Wyniki testu**: 91 labels w **34.2s** (było ~2 min) = **~3.5x szybciej**
+
+**Pliki**: `app.py` (linie ~3818-3965), `text_replacer.py` (linie 78, 356, 429)
+
+**Commit**: `a6224fb`
+
+---
+
+#### 2. TextReplacer text_areas Guard Fix
+
+**Problem**: Auto-detected `text_areas` z `data-placeholder` były stringami (np. `'Product'`) zamiast dict z koordynatami → `string indices must be integers` error
+
+**Rozwiązanie**: Filtrowanie non-dict entries w `TextReplacer.__init__()`:
+```python
+self.text_areas = {k: v for k, v in raw_areas.items() if isinstance(v, dict)}
+```
+
+**Pliki**: `text_replacer.py` (linia 36-38)
+
+**Commit**: `9a79437`
+
+---
+
+#### 3. ZIP Structure - Client Format
+
+**Problem**: ZIP miał strukturę `labels/SKU/filename.ext` - klient wymaga `Labels/SKU/SKU.ext`
+
+**Rozwiązanie**: Nowa struktura we wszystkich 5 ZIP pipeline'ach:
+
+**Labels ZIP:**
+```
+Labels/
+  YPB.200/
+    YPB.200.svg
+    YPB.200.jpg
+```
+
+**Mockups ZIP:**
+```
+Mockups/
+  YPB.200.png
+```
+
+**Combined ZIP:**
+```
+Labels/
+  YPB.200/
+    YPB.200.svg
+    YPB.200.jpg
+Mockups/
+  YPB.200.png
+```
+
+**Zmienione miejsca:**
+- `app.py:3971-3983` - Labels ZIP (main pipeline)
+- `app.py:3616-3623` - Labels ZIP (hybrid fallback)
+- `app.py:4516-4520` - Mockups ZIP (from labels)
+- `app.py:5062-5066` - Mockups ZIP (standalone batch)
+- `app.py:4723-4757` - Combined ZIP
+
+**Commit**: `06a0536`
+
+---
+
 ### ✅ Mockup Background Removal + Label Crop Scaling Fix (17.02.2026)
 
 **Cel**: Naprawa usuwania tła mockupów i skalowania koordynatów wycinania labela
@@ -1681,11 +1762,14 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 ## 📝 CHANGELOG
 
 ### 17 lutego 2026
+- ✅ **PERF: Parallel Label Generation** - 4 workers, 91 labels w 34s (było ~2 min), ~3.5x speedup
+- ✅ **FIX: TextReplacer text_areas guard** - filtr non-dict entries (auto-detected areas były stringami)
+- ✅ **FIX: ZIP Structure** - `Labels/YPB.200/YPB.200.ext` + `Mockups/YPB.200.png` (5 pipeline'ów)
 - ✅ **FIX: Background Removal** - rembg zainstalowane + uint8 overflow fix + opaque vial alpha fix
 - ✅ **FIX: Label Crop Scaling** - koordynaty skalowane z template→label dimensions (było: raw template coords na 4200x1800)
 - ✅ **UX: Label Progress Bar** - elapsed time + ETA (jak mockup progress bar)
-- ✅ **Pliki zmienione**: app.py, app_dashboard.html
-- ✅ **Commits**: `c2391a0`, `5051e56`, `c222291`
+- ✅ **Pliki zmienione**: app.py, text_replacer.py, app_dashboard.html
+- ✅ **Commits**: `a6224fb`, `9a79437`, `06a0536`, `c2391a0`, `5051e56`, `c222291`
 
 ### 16 lutego 2026
 - ✅ **ZIP Only SVG+JPG** - usunięto PNG i PDF z ZIP (main, fallback, combined pipelines)
@@ -1840,5 +1924,5 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ---
 
-**Last Updated**: 17 lutego 2026 (commit: `c222291`)
+**Last Updated**: 17 lutego 2026 (commit: `06a0536`)
 **Status**: ✅ Production Ready - Background Removal Fix + Label Crop Scaling + ZIP SVG+JPG + Mask Fix + 2400 DPI (4200x1800) + CAS/MW + SKU Filenames + 5 Data Fields + Google Fonts (398) + Fontconfig (188 aliases)
