@@ -74,8 +74,8 @@ class TextReplacer:
             # Register namespaces
             namespaces = {'': 'http://www.w3.org/2000/svg'}
 
-            # Pre-calculate synchronized CAS/MW formatting
-            self._cas_mw_format = self._sync_cas_mw_format(placeholders, product_data, root)
+            # Pre-calculate synchronized CAS/MW formatting (local var for thread-safety)
+            cas_mw_format = self._sync_cas_mw_format(placeholders, product_data, root)
 
             # Replace each placeholder
             for placeholder_name, placeholder_info in placeholders.items():
@@ -88,25 +88,25 @@ class TextReplacer:
                     raise TextReplacerError(
                         f"Missing value for placeholder: {placeholder_name}"
                     )
-                
+
                 # Find the element again (in case structure changed)
                 element = self._find_element(root, placeholder_name, placeholder_info)
-                
+
                 if element is None:
                     raise TextReplacerError(
                         f"Could not find element for placeholder: {placeholder_name}"
                     )
-                
+
                 # Check if user_area is defined - only move elements with user_area
                 # Elements WITHOUT user_area should stay in place (transform applies correctly)
                 user_area = self.text_areas.get(placeholder_name)
                 if user_area:
                     # Move to root level because user_area coordinates are in global SVG space
                     element = self._move_element_to_root(root, element, placeholder_name, apply_transform=False)
-                
+
                 # Replace text content while preserving structure
                 placeholder_info['placeholder_name'] = placeholder_name
-                self._replace_text_content(element, value, placeholder_info)
+                self._replace_text_content(element, value, placeholder_info, cas_mw_format=cas_mw_format)
             
             # Save modified SVG
             sku_value = self._get_product_value(product_data, 'sku') or 'temp'
@@ -353,7 +353,7 @@ class TextReplacer:
             return result
         return new_sku
 
-    def _replace_text_content(self, element, new_text: str, placeholder_info: Dict):
+    def _replace_text_content(self, element, new_text: str, placeholder_info: Dict, cas_mw_format: Dict = None):
         """Replace text content while preserving all formatting and intelligently formatting text."""
         placeholder_name = placeholder_info.get('placeholder_name', '')
 
@@ -426,8 +426,8 @@ class TextReplacer:
         # For elements WITHOUT user_area - replace text, preserve position/style
         if not user_area:
             # CAS/MW: use pre-calculated synchronized format with zone-aware positioning
-            if placeholder_name in ('cas', 'mw') and self._cas_mw_format:
-                fmt = self._cas_mw_format
+            if placeholder_name in ('cas', 'mw') and cas_mw_format:
+                fmt = cas_mw_format
                 font_size = fmt['font_size']
                 num_lines = fmt['num_lines']
                 line_height = fmt['line_height']

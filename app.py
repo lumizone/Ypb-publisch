@@ -3815,169 +3815,154 @@ def _generate_labels_task(
         processor.initialize()
         logger.info(f"BatchProcessor initialized once for {len(products)} products")
 
-        # Generate labels for each product
+        # Generate labels in parallel (4 workers) for ~3-4x speedup
         LABEL_TIMEOUT = 60  # 60 seconds per label
+        LABEL_WORKERS = 4
+        import threading
+        completed_count = [0]  # mutable counter for thread-safe increment
+        count_lock = threading.Lock()
 
-        for i, product in enumerate(products):
+        def _process_single_label(product, idx):
+            """Process one label: generate SVG, render PNG/JPG, copy to output. Returns label dict or None."""
+            product_name = product.get('Product', 'Unknown')
+            sku = product.get('SKU', f'UNKNOWN_{idx}')
             try:
-                product_name = product.get('Product', 'Unknown')
-                sku = product.get('SKU', f'UNKNOWN_{i}')
-
-                # Update progress
-                progress_tracker.set(tracking_id, {
-                    'current': i,
-                    'total': len(products),
-                    'status': 'processing',
-                    'message': f'Generating: {product_name}',
-                    'current_product': product_name,
-                    'percentage': int((i / len(products)) * 100)
-                })
-
-                logger.info(f"Processing label {i+1}/{len(products)}: {product_name} ({sku})")
+                logger.info(f"Processing label {idx+1}/{len(products)}: {product_name} ({sku})")
 
                 temp_dir = config.TEMP_DIR / f"label_{sku.replace('/', '_')}_{job_id}"
                 temp_dir.mkdir(parents=True, exist_ok=True)
 
-                # Generate label WITH TIMEOUT using shared processor
-                def generate_single_label(prod=product, out=temp_dir):
-                    return processor.process_product(prod, out)
+                # Generate label
+                result_data = processor.process_product(product, temp_dir)
 
-                result_data = None
-                try:
-                    with ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(generate_single_label)
-                        result_data = future.result(timeout=LABEL_TIMEOUT)
-                except FuturesTimeoutError:
-                    logger.error(f"⚠️ TIMEOUT generating label for {sku} (>{LABEL_TIMEOUT}s) - SKIPPING")
-                    errors.append(f"{sku}: Timeout after {LABEL_TIMEOUT}s")
-                    progress_tracker.set(tracking_id, {
-                        'current': i + 1,
-                        'total': len(products),
-                        'status': 'processing',
-                        'message': f'Skipped (timeout): {product_name}',
-                        'percentage': int(((i + 1) / len(products)) * 100)
-                    })
-                    continue
-                except Exception as label_error:
-                    logger.error(f"Error in label generation for {sku}: {label_error}")
-                    errors.append(f"{sku}: {str(label_error)}")
-                    progress_tracker.set(tracking_id, {
-                        'current': i + 1,
-                        'total': len(products),
-                        'status': 'processing',
-                        'message': f'Error: {product_name}',
-                        'percentage': int(((i + 1) / len(products)) * 100)
-                    })
-                    continue
+                if not result_data or result_data.get('status') != 'success':
+                    error_msg = result_data.get('error', 'Unknown error') if result_data else 'No result'
+                    logger.error(f"Label generation failed for {sku}: {error_msg}")
+                    return None, f"{sku}: {error_msg}"
 
-                # Process result from process_product (returns single result dict)
-                result = {'results': [result_data]} if result_data else {'results': []}
+                sku_safe = sku.replace('/', '_').replace('\\', '_')
+                svg_path = result_data.get('svg')
+                jpg_path = result_data.get('jpg')
 
-                # Find generated files and copy all formats (SVG, PNG, PDF)
-                for res in result.get('results', []):
-                    if res.get('status') == 'success':
-                        sku_safe = sku.replace('/', '_').replace('\\', '_')
+                # Convert SVG to PNG for mockup use
+                png_path = None
+                if svg_path and Path(svg_path).exists():
+                    try:
+                        import cairosvg
+                        import re as _re
+                        from PIL import Image as PILImage
+                        png_path = Path(svg_path).with_suffix('.png')
+                        _tw = _th = None
+                        try:
+                            with open(svg_path, 'r') as _sf:
+                                _hdr = _sf.read(2000)
+                            _wm = _re.search(r'<svg[^>]*\swidth="([0-9.]+)"', _hdr)
+                            _hm = _re.search(r'<svg[^>]*\sheight="([0-9.]+)"', _hdr)
+                            if _wm and _hm:
+                                _tw = int(round(float(_wm.group(1)) * config.PNG_DPI / 675))
+                                _th = int(round(float(_hm.group(1)) * config.PNG_DPI / 675))
+                        except Exception:
+                            pass
+                        cairosvg.svg2png(url=str(svg_path), write_to=str(png_path),
+                                         dpi=config.PNG_DPI)
+                        _img = PILImage.open(png_path)
+                        if _img.mode in ('RGBA', 'LA'):
+                            _bg = PILImage.new('RGB', _img.size, (255, 255, 255))
+                            _bg.paste(_img, mask=_img.split()[-1])
+                            _img.close()
+                            _img = _bg
+                        if _tw and _th and _img.size != (_tw, _th):
+                            _img = _img.resize((_tw, _th), PILImage.LANCZOS)
+                        _img.save(str(png_path), 'PNG', dpi=(config.PNG_DPI, config.PNG_DPI))
+                        _img.close()
+                    except Exception as e:
+                        logger.warning(f"Failed to convert SVG to PNG: {e}")
 
-                        # Get paths for all formats
-                        svg_path = res.get('svg')
-                        jpg_path = res.get('jpg')
+                # Copy all available formats to output directory
+                files_copied = {}
+                if svg_path and Path(svg_path).exists():
+                    svg_output = output_dir / f"{sku_safe}.svg"
+                    shutil.copy(svg_path, svg_output)
+                    files_copied['svg'] = str(svg_output)
+                if png_path and Path(png_path).exists():
+                    png_output = output_dir / f"{sku_safe}.png"
+                    shutil.copy(png_path, png_output)
+                    files_copied['png'] = str(png_output)
+                if jpg_path and Path(jpg_path).exists():
+                    jpg_output = output_dir / f"{sku_safe}.jpg"
+                    shutil.copy(jpg_path, jpg_output)
+                    files_copied['jpg'] = str(jpg_output)
 
-                        # Convert SVG to PNG for mockup use
-                        png_path = None
-                        if svg_path and Path(svg_path).exists():
-                            try:
-                                import cairosvg
-                                import re as _re
-                                from PIL import Image as PILImage
-                                png_path = Path(svg_path).with_suffix('.png')
-                                # Calculate target dimensions (SVG units are at 675 DPI base)
-                                _tw = _th = None
-                                try:
-                                    with open(svg_path, 'r') as _sf:
-                                        _hdr = _sf.read(2000)
-                                    _wm = _re.search(r'<svg[^>]*\swidth="([0-9.]+)"', _hdr)
-                                    _hm = _re.search(r'<svg[^>]*\sheight="([0-9.]+)"', _hdr)
-                                    if _wm and _hm:
-                                        _tw = int(round(float(_wm.group(1)) * config.PNG_DPI / 675))
-                                        _th = int(round(float(_hm.group(1)) * config.PNG_DPI / 675))
-                                except Exception:
-                                    pass
-                                # Render at native size (masks render correctly at native res)
-                                cairosvg.svg2png(url=str(svg_path), write_to=str(png_path),
-                                                 dpi=config.PNG_DPI)
-                                # Add white background + upscale to target DPI
-                                _img = PILImage.open(png_path)
-                                if _img.mode in ('RGBA', 'LA'):
-                                    _bg = PILImage.new('RGB', _img.size, (255, 255, 255))
-                                    _bg.paste(_img, mask=_img.split()[-1])
-                                    _img.close()
-                                    _img = _bg
-                                if _tw and _th and _img.size != (_tw, _th):
-                                    _img = _img.resize((_tw, _th), PILImage.LANCZOS)
-                                _img.save(str(png_path), 'PNG', dpi=(config.PNG_DPI, config.PNG_DPI))
-                                _img.close()
-                            except Exception as e:
-                                logger.warning(f"Failed to convert SVG to PNG: {e}")
+                if files_copied:
+                    preview_file = files_copied.get('png') or files_copied.get('jpg')
+                    preview_filename = Path(preview_file).name if preview_file else None
+                    logger.info(f"Generated label for {sku}: {list(files_copied.keys())}")
+                    return {
+                        'sku': sku,
+                        'product_name': product_name,
+                        'filename': preview_filename,
+                        'path': preview_file,
+                        'files': files_copied,
+                        'preview_url': f'/api/label-preview/{job_id}/{preview_filename}' if preview_filename else None
+                    }, None
 
-                        # Copy all available formats to output directory
-                        files_copied = {}
-
-                        # Copy SVG
-                        if svg_path and Path(svg_path).exists():
-                            svg_output = output_dir / f"{sku_safe}.svg"
-                            shutil.copy(svg_path, svg_output)
-                            files_copied['svg'] = str(svg_output)
-
-                        # Copy PNG (for mockups)
-                        if png_path and Path(png_path).exists():
-                            png_output = output_dir / f"{sku_safe}.png"
-                            shutil.copy(png_path, png_output)
-                            files_copied['png'] = str(png_output)
-
-                        # Copy JPG
-                        if jpg_path and Path(jpg_path).exists():
-                            jpg_output = output_dir / f"{sku_safe}.jpg"
-                            shutil.copy(jpg_path, jpg_output)
-                            files_copied['jpg'] = str(jpg_output)
-
-                        if files_copied:
-                            # Use PNG for preview/mockup if available, otherwise JPG
-                            preview_file = files_copied.get('png') or files_copied.get('jpg')
-                            preview_filename = Path(preview_file).name if preview_file else None
-
-                            labels.append({
-                                'sku': sku,
-                                'product_name': product_name,
-                                'filename': preview_filename,  # PNG or JPG for preview
-                                'path': preview_file,  # Main file for mockup generation
-                                'files': files_copied,  # All generated files
-                                'preview_url': f'/api/label-preview/{job_id}/{preview_filename}' if preview_filename else None
-                            })
-                            logger.info(f"Generated label for {sku}: {list(files_copied.keys())}")
-
-                            # Update progress after successful generation
-                            progress_tracker.set(tracking_id, {
-                                'current': i + 1,
-                                'total': len(products),
-                                'status': 'processing',
-                                'message': f'Completed: {product_name}',
-                                'current_product': product_name,
-                                'percentage': int(((i + 1) / len(products)) * 100)
-                            })
-                        break
+                return None, f"{sku}: No files generated"
 
             except Exception as e:
                 logger.error(f"Error generating label for {sku}: {e}")
-                errors.append(f"{sku}: {str(e)}")
-                # Update progress even on error
-                progress_tracker.set(tracking_id, {
-                    'current': i + 1,
-                    'total': len(products),
-                    'status': 'processing',
-                    'message': f'Error: {product_name}',
-                    'current_product': product_name,
-                    'percentage': int(((i + 1) / len(products)) * 100)
-                })
+                return None, f"{sku}: {str(e)}"
+
+        # Submit all products to thread pool
+        from concurrent.futures import as_completed
+        logger.info(f"Starting parallel label generation: {len(products)} products, {LABEL_WORKERS} workers")
+
+        with ThreadPoolExecutor(max_workers=LABEL_WORKERS) as executor:
+            future_to_idx = {}
+            for i, product in enumerate(products):
+                future = executor.submit(_process_single_label, product, i)
+                future_to_idx[future] = (i, product)
+
+            for future in as_completed(future_to_idx):
+                idx, product = future_to_idx[future]
+                product_name = product.get('Product', 'Unknown')
+                sku = product.get('SKU', f'UNKNOWN_{idx}')
+
+                try:
+                    label_result, error_msg = future.result(timeout=LABEL_TIMEOUT)
+                except FuturesTimeoutError:
+                    logger.error(f"⚠️ TIMEOUT generating label for {sku} (>{LABEL_TIMEOUT}s) - SKIPPING")
+                    error_msg = f"{sku}: Timeout after {LABEL_TIMEOUT}s"
+                    label_result = None
+                except Exception as e:
+                    logger.error(f"Error in label generation for {sku}: {e}")
+                    error_msg = f"{sku}: {str(e)}"
+                    label_result = None
+
+                with count_lock:
+                    completed_count[0] += 1
+                    current = completed_count[0]
+
+                if label_result:
+                    labels.append(label_result)
+                    progress_tracker.set(tracking_id, {
+                        'current': current,
+                        'total': len(products),
+                        'status': 'processing',
+                        'message': f'Completed: {product_name} ({sku})',
+                        'current_product': product_name,
+                        'percentage': int((current / len(products)) * 100)
+                    })
+                else:
+                    if error_msg:
+                        errors.append(error_msg)
+                    progress_tracker.set(tracking_id, {
+                        'current': current,
+                        'total': len(products),
+                        'status': 'processing',
+                        'message': f'Error: {product_name}',
+                        'current_product': product_name,
+                        'percentage': int((current / len(products)) * 100)
+                    })
 
         # Create ZIP file in output_dir (persistent, downloadable)
         zip_filename = f"labels_{job_id}.zip"
