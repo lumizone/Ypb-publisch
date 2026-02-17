@@ -1,6 +1,6 @@
 # YPBv2 - Label & Mockup Generator
 
-**Status**: ✅ Production Ready (16 lutego 2026)
+**Status**: ✅ Production Ready (17 lutego 2026)
 **Lokalizacja**: `/Users/lukasz/YPBv2`
 **Port**: http://localhost:8000
 **Railway**: https://ypbv2.up.railway.app (8 CPU / 8GB RAM)
@@ -8,6 +8,58 @@
 ---
 
 ## 🎯 AKTUALNY STAN APLIKACJI
+
+### ✅ Mockup Background Removal + Label Crop Scaling Fix (17.02.2026)
+
+**Cel**: Naprawa usuwania tła mockupów i skalowania koordynatów wycinania labela
+
+---
+
+#### 1. Background Removal Fix (rembg)
+
+**Problem**: `rembg` (AI-based) było w requirements.txt ale nie zainstalowane → fallback color-based miał 2 bugi:
+- **uint8 overflow**: `rgb - vial_rgb` (oba uint8) powodował przepełnienie → błędne odległości kolorów → wszystkie piksele "podobne do fiolki"
+- **Opaque vial alpha**: `vial_alpha > 128` = True dla uploadowanych zdjęć (JPEG, brak przezroczystości) → wszystko oznaczone jako foreground → zero pikseli usunięte
+
+**Rozwiązanie**:
+- Zainstalowano `rembg` + `onnxruntime` (AI-based background removal)
+- Fix fallback: `rgb.astype(np.float32) - vial_rgb.astype(np.float32)` (poprawna arytmetyka)
+- Fix fallback: sprawdzanie `has_transparency` przed użyciem vial alpha jako foreground
+
+**Pliki**: `app.py` (linie 1250-1263)
+
+---
+
+#### 2. Label Crop Coordinate Scaling
+
+**Problem**: Koordynaty wycinania labela były w wymiarach template SVG (~1181x506) ale stosowane do wygenerowanego labela (4200x1800) bez skalowania → Gemini dostawał tylko mały fragment lewego górnego rogu
+
+**Rozwiązanie**:
+- Frontend wysyła `templateWidth/templateHeight` razem z crop data
+- Backend skaluje koordynaty: `crop_x = int(round(x * label_w / template_w))`
+- Zastosowane w obu pipeline'ach: combined + standalone batch
+
+**Pliki**: `app.py` (linie 4375-4400, 4986-5012), `app_dashboard.html` (linie 7900-7908)
+
+---
+
+#### 3. Label Generation Progress Bar (elapsed + ETA)
+
+**Problem**: Pasek postępu generowania labels nie miał elapsed time i ETA (mockup miał)
+
+**Rozwiązanie**: Dodano elapsed time counter + ETA oparty na średnim czasie przetwarzania
+
+**Format**: `Generating: Sermorelin (YPB.211) - 45% (2m 30s elapsed, ~5m 12s left)`
+
+**Pliki**: `app_dashboard.html`
+
+---
+
+**Commits**: `c2391a0` (bg fix), `5051e56` (crop scaling + rembg), `c222291` (progress bar)
+
+**Status**: ✅ Zaimplementowane (17.02.2026)
+
+---
 
 ### ✅ ZIP SVG+JPG Only + Mask Transparency Fix (16.02.2026)
 
@@ -1628,6 +1680,13 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ## 📝 CHANGELOG
 
+### 17 lutego 2026
+- ✅ **FIX: Background Removal** - rembg zainstalowane + uint8 overflow fix + opaque vial alpha fix
+- ✅ **FIX: Label Crop Scaling** - koordynaty skalowane z template→label dimensions (było: raw template coords na 4200x1800)
+- ✅ **UX: Label Progress Bar** - elapsed time + ETA (jak mockup progress bar)
+- ✅ **Pliki zmienione**: app.py, app_dashboard.html
+- ✅ **Commits**: `c2391a0`, `5051e56`, `c222291`
+
 ### 16 lutego 2026
 - ✅ **ZIP Only SVG+JPG** - usunięto PNG i PDF z ZIP (main, fallback, combined pipelines)
 - ✅ **Mask Transparency Fix** - CairoSVG render at native size + PIL LANCZOS upscale (fix washed-out logo edges)
@@ -1781,5 +1840,5 @@ cleanup_old_files(config.OUTPUT_DIR, hours=24)
 
 ---
 
-**Last Updated**: 16 lutego 2026 (commit: `caf138d`)
-**Status**: ✅ Production Ready - ZIP SVG+JPG Only + Mask Fix + 2400 DPI (4200x1800) + CAS/MW + SKU Filenames + 5 Data Fields + Google Fonts (398) + Fontconfig (188 aliases)
+**Last Updated**: 17 lutego 2026 (commit: `c222291`)
+**Status**: ✅ Production Ready - Background Removal Fix + Label Crop Scaling + ZIP SVG+JPG + Mask Fix + 2400 DPI (4200x1800) + CAS/MW + SKU Filenames + 5 Data Fields + Google Fonts (398) + Fontconfig (188 aliases)
