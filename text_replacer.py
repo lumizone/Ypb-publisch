@@ -33,7 +33,10 @@ class TextReplacer:
         self.parser = template_parser
         self.template_path = template_parser.template_path
         self.formatter = TextFormatter()
-        self.text_areas = text_areas or {}  # User-defined text areas: {placeholder_name: {x, y, width, height}}
+        # User-defined text areas: {placeholder_name: {x, y, width, height}}
+        # Filter out non-dict entries (auto-detected areas are strings, not coordinate dicts)
+        raw_areas = text_areas or {}
+        self.text_areas = {k: v for k, v in raw_areas.items() if isinstance(v, dict)}
         self.text_alignments = text_alignments or {}  # User-defined text alignments: {placeholder_name: 'left'|'center'|'right'}
 
     def _get_text_anchor(self, placeholder_name: str) -> str:
