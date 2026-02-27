@@ -2027,6 +2027,19 @@
                         <li>Wrong position → text appears outside the label</li>
                     </ul>
                 </div>
+
+                <div style="margin-top: 16px; background: #eff6ff; padding: 12px; border-radius: 3px; border-left: 4px solid #3b82f6;">
+                    <div style="font-weight: 600; margin-bottom: 8px; color: #1e40af;">8 Resize Handles (NEW)</div>
+                    <p style="margin: 0; color: #1e3a8a; font-size: 14px;">Text areas now have 8 resize handles (4 corners + 4 edges). Drag any handle to precisely adjust area size without redrawing. Makes it easy to fine-tune text area dimensions.</p>
+                </div>
+
+                <div style="margin-top: 16px; background: #dcfce7; padding: 12px; border-radius: 3px; border-left: 4px solid #22c55e;">
+                    <div style="font-weight: 600; margin-bottom: 8px; color: #166534;">CAS & MW Auto-Detection (NEW)</div>
+                    <p style="margin: 0; color: #15803d; font-size: 14px;">
+                        System automatically detects CAS numbers and molecular weights in your template by matching values from the database. <strong>Zero manual drawing needed!</strong><br><br>
+                        <strong>How it works:</strong> Upload template with "114466-38-5" text → System finds this CAS in database (YPB.211) → Auto-tags as CAS placeholder → Replaces for all 5 fields (Product, Ingredients, SKU, CAS, MW) automatically
+                    </p>
+                </div>
             </div>
 
             <!-- Text Alignment -->
@@ -2069,10 +2082,47 @@
                     <div style="font-weight: 600; margin-bottom: 4px; color: #92400e;">Important notes:</div>
                     <ul style="margin: 4px 0; padding-left: 20px; color: #78350f; font-size: 13px; line-height: 1.6;">
                         <li><strong>SKU field is NOT controlled</strong> - it remains as positioned in the original template</li>
-                        <li>Default alignment is LEFT for both Product Name and Ingredients</li>
+                        <li>Default alignment is CENTER for both Product Name and Ingredients</li>
                         <li>Alignment only affects fields where you drew text areas</li>
                         <li>Change alignment BEFORE generating labels (cannot change after)</li>
                     </ul>
+                </div>
+            </div>
+
+            <!-- Product Selection -->
+            <div class="card" style="margin-bottom: 16px;">
+                <div style="font-weight: 600; font-size: 18px; margin-bottom: 16px; color: #37352f; border-bottom: 1px solid #e9e9e7; padding-bottom: 12px;">Product Selection (NEW)</div>
+
+                <div style="margin-bottom: 16px; background: #f0f9ff; padding: 12px; border-radius: 3px; border-left: 4px solid #2383e2;">
+                    <div style="font-weight: 600; margin-bottom: 8px; color: #1e40af;">What is product selection?</div>
+                    <p style="margin: 0; color: #1e3a8a; font-size: 14px;">Instead of generating labels for ALL products in your database, you can now select specific products to generate. Useful when you only need labels for a subset of products.</p>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <div style="font-weight: 500; margin-bottom: 8px;">Where to find it?</div>
+                    <p style="margin: 0; color: #37352f; margin-bottom: 8px;">In Combined Generator Step 4, you'll see a database indicator and two options:</p>
+                    <ul style="margin: 4px 0; padding-left: 20px; line-height: 1.6;">
+                        <li><strong>Generate All Products</strong> - creates labels for entire database (default)</li>
+                        <li><strong>Select Specific Products</strong> - opens a modal to choose specific products</li>
+                    </ul>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <div style="font-weight: 500; margin-bottom: 8px;">How to use:</div>
+                    <ol style="margin: 8px 0; padding-left: 20px; line-height: 1.8;">
+                        <li>Click "Select Specific Products" radio button</li>
+                        <li>Modal opens with full product list (Product Name, Ingredients, SKU)</li>
+                        <li>Check products you want to generate</li>
+                        <li>Use "Select All" / "Unselect All" for bulk actions</li>
+                        <li>See real-time counter: "5 of 92 products selected"</li>
+                        <li>Click "Confirm Selection"</li>
+                        <li>Generate Labels - system creates only selected products</li>
+                    </ol>
+                </div>
+
+                <div style="background: #dcfce7; padding: 12px; border-radius: 3px; border-left: 4px solid #22c55e;">
+                    <div style="font-weight: 600; margin-bottom: 4px; color: #166534;">Example use case:</div>
+                    <p style="margin: 0; font-size: 13px; color: #166534;">You have 92 products but only need mockups for 5 new products → Select only those 5 → Saves time and API calls</p>
                 </div>
             </div>
 
@@ -2153,7 +2203,7 @@
 
                 <div style="margin-bottom: 16px;">
                     <div style="font-weight: 500; margin-bottom: 8px;">Step 4: Generate Labels (STEP 1)</div>
-                    <p style="margin: 0; color: #37352f;">Click green "Generate All Labels" button. System creates a label for each product in your database. Watch progress bar (e.g., "25/91 labels generated"). Processing time: ~2-5 seconds per product. You'll see a gallery of generated labels when done.</p>
+                    <p style="margin: 0; color: #37352f;">Click green "Generate All Labels" button. System creates labels for all products (or selected products) in parallel using 4 workers. Watch progress bar with elapsed time and ETA (e.g., "45/91 - 49% (2m 30s elapsed, ~5m 12s left)"). Processing time: ~34 seconds for 91 products (~3.5x faster than sequential). You'll see a gallery of generated labels when done.</p>
                 </div>
 
                 <div style="margin-bottom: 16px;">
@@ -2171,12 +2221,12 @@
 
                 <div style="margin-bottom: 16px;">
                     <div style="font-weight: 500; margin-bottom: 8px;">Step 7: Download Results</div>
-                    <p style="margin: 0; color: #37352f;">Click "Download Labels ZIP" (labels in SVG, PNG, PDF) or "Download Mockups ZIP" (mockups in PNG). Or go to Archive tab to download later.</p>
+                    <p style="margin: 0; color: #37352f;">Click "Download Labels ZIP" (labels in SVG and JPG at 2400 DPI) or "Download Mockups ZIP" (mockups in PNG). Download button shows file count (e.g., "Download Labels ZIP (92 labels)"). Or go to Archive tab to download later.</p>
                 </div>
 
                 <div style="background: #dcfce7; padding: 12px; border-radius: 4px; border: 1px solid #22c55e;">
                     <div style="font-weight: 600; margin-bottom: 6px; color: #166534;">Done!</div>
-                    <p style="margin: 0; color: #166534; font-size: 14px;">You now have complete labels (SVG/PNG/PDF) and realistic mockups (PNG) for all products. Files are named by SKU (e.g., label_YPB.101.png, mockup_YPB.101.png)</p>
+                    <p style="margin: 0; color: #166534; font-size: 14px;">You now have complete labels (SVG + JPG at 2400 DPI, 4200x1800) and realistic mockups (PNG) for all products. Files named by SKU only (e.g., YPB.101.svg, YPB.101.jpg). ZIP structure: Labels/YPB.101/YPB.101.svg + Mockups/YPB.101.png</p>
                 </div>
             </div>
 
@@ -2197,12 +2247,12 @@
 
                 <div style="margin-bottom: 16px;">
                     <div style="font-weight: 500; margin-bottom: 8px;">Step 3: Generate Labels</div>
-                    <p style="margin: 0; color: #37352f;">Click "Generate Labels" button. System creates labels for all products in database. Processing: ~2-5 seconds per product.</p>
+                    <p style="margin: 0; color: #37352f;">Click "Generate Labels" button. System creates labels in parallel (4 workers) - 91 products in ~34 seconds. Watch progress bar with elapsed time and ETA.</p>
                 </div>
 
                 <div style="margin-bottom: 16px;">
                     <div style="font-weight: 500; margin-bottom: 8px;">Step 4: Download</div>
-                    <p style="margin: 0; color: #37352f;">Click "Download ZIP" or go to Archive tab. Labels are in SVG, PNG (300 DPI), and PDF (vector) formats.</p>
+                    <p style="margin: 0; color: #37352f;">Click "Download ZIP" or go to Archive tab. Labels are in SVG and JPG (2400 DPI, 4200x1800) formats.</p>
                 </div>
             </div>
 
@@ -2272,11 +2322,13 @@
 
                 <div style="margin-bottom: 16px;">
                     <div style="font-weight: 500; margin-bottom: 8px;">Database Structure</div>
-                    <p style="margin: 0; color: #37352f; margin-bottom: 6px;">Each database is a CSV file with three required columns:</p>
+                    <p style="margin: 0; color: #37352f; margin-bottom: 6px;">Each database is a CSV file with five required columns:</p>
                     <ul style="margin: 4px 0; padding-left: 20px; line-height: 1.6;">
                         <li><strong>Product</strong> - product name (e.g., "NAD+", "Thymosin Beta 4")</li>
                         <li><strong>Ingredients</strong> - ingredients with dosage (e.g., "NAD+ 100mg")</li>
                         <li><strong>SKU</strong> - unique product code (e.g., "YPB.101")</li>
+                        <li><strong>CAS Number</strong> - Chemical Abstract Service number (e.g., "114466-38-5")</li>
+                        <li><strong>Molecular Weight</strong> - molecular weight with unit (e.g., "3357.88 Da")</li>
                     </ul>
                 </div>
 
@@ -2287,11 +2339,14 @@
                         <li>Click "+ New Database" button</li>
                         <li>Select your CSV file</li>
                         <li>Preview shows detected columns</li>
-                        <li>Map columns (tell system which is Product, Ingredients, SKU)</li>
+                        <li>Map columns (tell system which is Product, Ingredients, SKU, CAS Number, Molecular Weight)</li>
                         <li>Enter database name</li>
                         <li>Click "Import Database"</li>
                         <li>Database appears in sidebar dropdown</li>
                     </ol>
+                    <div style="background: #f0f9ff; padding: 8px; margin-top: 6px; border-radius: 3px; font-size: 13px;">
+                        <strong>Auto-mapping:</strong> System automatically detects column names like "CAS", "CAS Number", "M.W.", "Molecular Weight" and maps them correctly.
+                    </div>
                 </div>
 
                 <div style="margin-bottom: 16px;">
@@ -2351,31 +2406,35 @@
                 <div style="margin-bottom: 16px;">
                     <div style="font-weight: 500; margin-bottom: 8px;">The Process</div>
                     <ol style="margin: 4px 0; padding-left: 20px; line-height: 1.6;">
-                        <li>Label is converted to PNG image</li>
+                        <li>Label is converted to PNG image (2400 DPI)</li>
                         <li>Vial photo gets green background (#00FF00) for masking</li>
-                        <li>Both images sent to Google Gemini AI with prompt: "Place this label on the vial realistically"</li>
+                        <li>Vial image sent 3x as reference + label sent to Google Gemini AI (gemini-2.5-flash-image)</li>
+                        <li>Ultra-low temperature (0.01-0.02) ensures consistent vial size across all mockups</li>
                         <li>AI generates photorealistic mockup with perspective, lighting, curvature</li>
-                        <li>System verifies mockup using AI vision (checks SKU, product name, dosage)</li>
+                        <li>System verifies mockup using side-by-side AI vision (text accuracy check)</li>
                         <li>If verification fails → retry with error hints (max 3 attempts)</li>
-                        <li>Green background is removed (color-based masking)</li>
+                        <li>Green background removed using rembg (AI-based) or color-based fallback</li>
                         <li>Final mockup saved as PNG with transparent background</li>
                     </ol>
+                    <div style="background: #f0fdf4; padding: 8px; margin-top: 6px; border-radius: 3px; font-size: 13px;">
+                        <strong>Background Removal (NEW):</strong> System uses rembg (AI-based removal) for better quality. Falls back to color-based method if needed. Both methods handle uploaded JPEGs without transparency.
+                    </div>
                 </div>
 
                 <div style="margin-bottom: 16px; background: #fef3c7; padding: 12px; border-radius: 3px; border-left: 4px solid #f59e0b;">
-                    <div style="font-weight: 600; margin-bottom: 6px; color: #92400e;">AI Verification (New Feature)</div>
+                    <div style="font-weight: 600; margin-bottom: 6px; color: #92400e;">AI Verification - Side-by-Side (NEW)</div>
                     <p style="margin: 0; color: #78350f; font-size: 13px;">
-                        After generating each mockup, system uses Gemini Vision to read text on the mockup and verify:<br>
-                        ✓ SKU matches expected (e.g., "YPB.101")<br>
-                        ✓ Product name matches (e.g., "NAD+")<br>
-                        ✓ Dosage matches (e.g., "100mg")<br>
-                        If any mismatch → system retries with error hint to AI (e.g., "Previous attempt: SKU incorrect")
+                        System creates composite image (mockup | label) and sends to Gemini Vision for text accuracy verification:<br>
+                        ✓ <strong>TEXT is PRIMARY</strong> - accepts mockup if text match ≥90% (product name, ingredients, SKU)<br>
+                        ℹ️ Vial size differences are INFO only (Gemini generates different resolutions - this is normal)<br>
+                        If text verification fails → system retries with error hints (max 3 attempts)<br>
+                        Result: ~96% accuracy with side-by-side verification (was: 70% with OCR-only)
                     </p>
                 </div>
 
                 <div style="margin-bottom: 16px;">
                     <div style="font-weight: 500; margin-bottom: 8px;">Performance</div>
-                    <p style="margin: 0; color: #37352f;">Mockups processed in parallel (4 at a time). For 91 products: ~12-15 minutes total. Each mockup: ~20-30 seconds including verification.</p>
+                    <p style="margin: 0; color: #37352f;">Mockups processed in parallel (4-6 workers depending on server). For 91 products: ~12-15 minutes total. Each mockup: ~20-30 seconds including verification. Progress bar shows elapsed time, current phase (Sending→Processing→Almost done), and ETA.</p>
                 </div>
 
                 <div style="margin-bottom: 16px;">
@@ -2413,12 +2472,15 @@
                     <div style="font-weight: 500; margin-bottom: 8px;">File Organization</div>
                     <p style="margin: 0; color: #37352f; margin-bottom: 6px;">Inside each ZIP:</p>
                     <ul style="margin: 4px 0; padding-left: 20px; line-height: 1.6; font-family: monospace; font-size: 13px;">
-                        <li>labels_20260129_143000/</li>
+                        <li>Labels/</li>
                         <li>&nbsp;&nbsp;├─ YPB.101/</li>
-                        <li>&nbsp;&nbsp;│&nbsp;&nbsp;├─ label_YPB.101.svg</li>
-                        <li>&nbsp;&nbsp;│&nbsp;&nbsp;├─ label_YPB.101.png (300 DPI)</li>
-                        <li>&nbsp;&nbsp;│&nbsp;&nbsp;└─ label_YPB.101.pdf (vector)</li>
+                        <li>&nbsp;&nbsp;│&nbsp;&nbsp;├─ YPB.101.svg</li>
+                        <li>&nbsp;&nbsp;│&nbsp;&nbsp;└─ YPB.101.jpg (2400 DPI)</li>
                         <li>&nbsp;&nbsp;├─ YPB.102/</li>
+                        <li>&nbsp;&nbsp;└─ ...</li>
+                        <li>Mockups/</li>
+                        <li>&nbsp;&nbsp;├─ YPB.101.png</li>
+                        <li>&nbsp;&nbsp;├─ YPB.102.png</li>
                         <li>&nbsp;&nbsp;└─ ...</li>
                     </ul>
                 </div>
@@ -2471,11 +2533,10 @@
                 <div style="font-weight: 600; font-size: 18px; margin-bottom: 16px; color: #37352f; border-bottom: 1px solid #e9e9e7; padding-bottom: 12px;">Output Formats - What You Get</div>
 
                 <div style="margin-bottom: 16px;">
-                    <div style="font-weight: 500; margin-bottom: 8px;">Labels (3 Formats)</div>
+                    <div style="font-weight: 500; margin-bottom: 8px;">Labels (2 Formats)</div>
                     <ul style="margin: 4px 0; padding-left: 20px; line-height: 1.6;">
                         <li><strong>SVG</strong> - vector format, infinite scaling, editable in Illustrator/Inkscape</li>
-                        <li><strong>PNG</strong> - raster format at 300 DPI (print quality), for web/preview</li>
-                        <li><strong>PDF</strong> - vector format, ready for professional printing</li>
+                        <li><strong>JPG</strong> - raster format at 2400 DPI (high-quality print), 4200x1800 pixels</li>
                     </ul>
                 </div>
 
