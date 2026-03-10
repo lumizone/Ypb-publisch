@@ -121,4 +121,4 @@ EXPOSE 8000
 # Uses $PORT from Railway environment variable
 # 1 worker x 16 threads = shared in-memory state (progress_tracker, background_results)
 # Multiple workers cause progress bar to break (each worker has separate memory)
-CMD gunicorn -w 1 -b 0.0.0.0:$PORT --timeout 900 --threads 16 --graceful-timeout 120 app:app
+CMD gunicorn -w 1 -b 0.0.0.0:${PORT:-8000} --timeout 900 --threads 16 --graceful-timeout 120 app:app

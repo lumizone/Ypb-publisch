@@ -17,25 +17,213 @@ This application takes a finalized Illustrator/SVG label template and generates 
 
 ---
 
-## Prerequisites
+## Installation Options
 
-- **Python 3.9+**
-- **Cairo** (required for SVG rendering) — see [INSTALL_CAIRO.md](INSTALL_CAIRO.md)
-- **Google Gemini API key** (required for mockup generation only)
-  - Get one free at: https://aistudio.google.com/apikey
+There are two ways to run this application. **Docker is recommended** — it requires no manual dependency installation and works identically on any system.
+
+| | Docker | Manual (Python) |
+|---|---|---|
+| Setup time | ~15 min (one-time build) | ~30 min |
+| Dependencies | Docker Desktop only | Python, Cairo, pip |
+| Works on | macOS, Windows, Linux | macOS, Linux |
+| Recommended for | Everyone | Developers |
 
 ---
 
-## Quick Start
+## Option A: Docker (Recommended)
+
+### Step 1 — Install Docker Desktop
+
+Download and install Docker Desktop from: **https://www.docker.com/products/docker-desktop**
+
+After installation, launch Docker Desktop and wait until it shows **"Docker is running"** in the system tray.
+
+> **Windows users**: During Docker installation, if asked about WSL 2 — click **Install** and follow the prompts. Restart your computer if required.
+
+### Step 2 — Get a Gemini API Key
+
+The application uses Google Gemini AI for mockup generation (free tier is sufficient).
+
+1. Go to: **https://aistudio.google.com/apikey**
+2. Sign in with a Google account
+3. Click **Create API key**
+4. Copy the key — you'll need it in Step 4
+
+### Step 3 — Clone the repository
+
+Open a terminal (macOS/Linux) or Command Prompt / PowerShell (Windows):
+
+```bash
+git clone https://github.com/lumizone/Ypb-publisch.git
+cd Ypb-publisch
+```
+
+Or download as ZIP from GitHub and extract it.
+
+### Step 4 — Create your environment file
+
+Copy the example file:
+
+```bash
+# macOS / Linux
+cp .env.example .env.local
+
+# Windows (Command Prompt)
+copy .env.example .env.local
+```
+
+Open `.env.local` in any text editor and fill in your values:
+
+```
+GEMINI_API_KEY=paste_your_key_here
+AUTH_USER=Admin
+AUTH_PASS=choose_a_password
+DISABLE_AUTH=true
+```
+
+> Leave `DISABLE_AUTH=true` for local use. Set it to `false` if the app is accessible from the internet.
+
+### Step 5 — Build the Docker image
+
+This step downloads all fonts, AI models, and dependencies. It only needs to run **once** — subsequent starts are instant.
+
+```bash
+docker build -t ypb-generator .
+```
+
+**Expected build time**: 10–20 minutes depending on your internet speed.
+
+During the build you'll see output like:
+```
+📥 Downloading Microsoft Core Fonts...
+✅ Installed 11 Microsoft Core Fonts
+📥 Downloading Google Fonts repository (1500+ fonts)...
+✅ Installed 3247 Google Fonts
+✅ rembg model cached in Docker image
+```
+
+If any font download shows `⚠ failed` — that's normal, fallback fonts are used automatically.
+
+### Step 6 — Run the application
+
+```bash
+docker run -d \
+  --name ypb \
+  -p 8000:8000 \
+  --env-file .env.local \
+  -v "$(pwd)/output:/app/output" \
+  -v "$(pwd)/uploads:/app/uploads" \
+  -v "$(pwd)/databases:/app/databases" \
+  ypb-generator
+```
+
+**Windows (Command Prompt)** — use `%cd%` instead of `$(pwd)`:
+```
+docker run -d --name ypb -p 8000:8000 --env-file .env.local -v "%cd%/output:/app/output" -v "%cd%/uploads:/app/uploads" -v "%cd%/databases:/app/databases" ypb-generator
+```
+
+**Windows (PowerShell)**:
+```powershell
+docker run -d --name ypb -p 8000:8000 --env-file .env.local -v "${PWD}/output:/app/output" -v "${PWD}/uploads:/app/uploads" -v "${PWD}/databases:/app/databases" ypb-generator
+```
+
+### Step 7 — Open the application
+
+Open your browser at: **http://localhost:8000**
+
+---
+
+### Docker — everyday usage
+
+```bash
+# Stop the application
+docker stop ypb
+
+# Start again (no rebuild needed)
+docker start ypb
+
+# Restart
+docker restart ypb
+
+# View logs
+docker logs ypb
+docker logs -f ypb   # follow in real time
+
+# Remove the container (keeps the image, so rebuild not needed)
+docker rm -f ypb
+```
+
+### Docker — updating to a new version
+
+```bash
+# Pull latest code
+git pull
+
+# Remove old container
+docker rm -f ypb
+
+# Rebuild image (only needed if requirements.txt or Dockerfile changed)
+docker build -t ypb-generator .
+
+# Start again
+docker run -d --name ypb -p 8000:8000 --env-file .env.local \
+  -v "$(pwd)/output:/app/output" \
+  -v "$(pwd)/uploads:/app/uploads" \
+  -v "$(pwd)/databases:/app/databases" \
+  ypb-generator
+```
+
+### Docker — troubleshooting
+
+**"Cannot connect to the Docker daemon" / Docker not running**
+→ Open Docker Desktop and wait until it shows "Docker is running"
+
+**Port 8000 already in use**
+→ Change `-p 8000:8000` to `-p 8080:8000` and open `http://localhost:8080`
+
+**Container exits immediately**
+→ Check logs: `docker logs ypb` — most likely the `.env.local` file is missing or has wrong values
+
+**Generated files not appearing on disk**
+→ Make sure you included the `-v` volume flags in the `docker run` command. Without them, files are generated inside the container only.
+
+**"no space left on device" during build**
+→ The image is ~4-5 GB. Open Docker Desktop → Settings → Resources → increase Disk image size to at least 20 GB
+
+---
+
+## Option B: Manual Installation (Python)
+
+Use this method if you prefer not to use Docker or are running on a server without Docker.
+
+### Prerequisites
+
+- Python 3.9+
+- Cairo library — see [INSTALL_CAIRO.md](INSTALL_CAIRO.md)
+- Gemini API key — see [Step 2 above](#step-2--get-a-gemini-api-key)
 
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
-cd YPBv2
+git clone https://github.com/lumizone/Ypb-publisch.git
+cd Ypb-publisch
 ```
 
-### 2. Create a virtual environment
+### 2. Install Cairo
+
+**macOS:**
+```bash
+brew install cairo pkg-config
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get install libcairo2-dev pkg-config python3-dev build-essential
+```
+
+For detailed instructions and troubleshooting: [INSTALL_CAIRO.md](INSTALL_CAIRO.md)
+
+### 3. Create a virtual environment
 
 ```bash
 python3 -m venv .venv
@@ -43,61 +231,70 @@ source .venv/bin/activate   # macOS/Linux
 # or: .venv\Scripts\activate  (Windows)
 ```
 
-### 3. Install dependencies
+### 4. Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure environment
+This may take a few minutes (installs CairoSVG, rembg, Pillow, Flask, etc.).
+
+### 5. Configure environment
 
 ```bash
 cp .env.example .env.local
 ```
 
-Edit `.env.local` and fill in your values:
-
+Edit `.env.local`:
 ```
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=paste_your_key_here
 AUTH_USER=Admin
-AUTH_PASS=your_password_here
+AUTH_PASS=choose_a_password
 DISABLE_AUTH=true
 ```
 
-### 5. Start the application
+### 6. Start the application
 
 ```bash
 ./start.sh
 ```
 
-Then open your browser at **http://localhost:8000**
+Then open: **http://localhost:8000**
+
+**Alternative:**
+```bash
+source .venv/bin/activate
+python app.py
+```
+
+**Other commands:**
+```bash
+./stop.sh      # stop the application
+./restart.sh   # restart
+tail -f /tmp/flask_app.log   # view logs
+```
+
+**macOS Apple Silicon (M1/M2/M3) — if Cairo is not found:**
+```bash
+export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:$PKG_CONFIG_PATH"
+export DYLD_LIBRARY_PATH="/opt/homebrew/lib:$DYLD_LIBRARY_PATH"
+./start.sh
+```
 
 ---
 
-## Obtaining a Gemini API Key
+## Using the Application
 
-1. Go to https://aistudio.google.com/apikey
-2. Sign in with a Google account
-3. Click **Create API key**
-4. Copy the key into your `.env.local` file as `GEMINI_API_KEY=...`
+### Three generators are available:
 
-The free tier is sufficient for generating mockups. Mockup generation uses the `gemini-2.5-flash-image` model.
-
----
-
-## Usage
-
-The application has three generators accessible from the web UI:
-
-### Label Generator (Standalone)
-
+#### Label Generator (Standalone)
 1. Upload your label template (SVG or Adobe Illustrator `.ai` file)
 2. The system auto-detects all text fields (product name, dosage, SKU, CAS, MW)
 3. Select your product database (CSV)
 4. Click **Generate Labels**
 5. Download the ZIP archive
 
-**Output ZIP structure:**
+**Output:**
 ```
 Labels/
   YPB.211/
@@ -108,22 +305,20 @@ Labels/
     YPB.212.jpg
 ```
 
-### Mockup Generator (Standalone)
-
+#### Mockup Generator (Standalone)
 1. Upload a vial/product photo
 2. Select or upload label files
 3. Click **Generate Mockups**
 4. Download the ZIP archive
 
-**Output ZIP structure:**
+**Output:**
 ```
 Mockups/
   YPB.211.png
   YPB.212.png
 ```
 
-### Combined Generator (Recommended)
-
+#### Combined Generator (Recommended)
 Generates labels and mockups in one workflow:
 
 1. **Upload Vial** — your product photo
@@ -134,7 +329,7 @@ Generates labels and mockups in one workflow:
 6. **Generate Mockups** — batch generate all mockups
 7. **Download All** — combined ZIP with labels + mockups
 
-**Combined ZIP structure:**
+**Output:**
 ```
 Labels/
   YPB.211/
@@ -156,16 +351,17 @@ YPB.211,Sermorelin,10mg,114466-38-5,3357.88 Da
 YPB.212,BPC-157,5mg,137525-51-0,1419.55 Da
 ```
 
-**Column mapping** (auto-detected, column names are flexible):
-| Field | Accepted names |
-|-------|----------------|
+Column names are flexible — the system auto-detects them:
+
+| Field | Accepted column names |
+|-------|-----------------------|
 | SKU | `SKU`, `sku` |
 | Product name | `Product`, `product_name`, `Name` |
 | Dosage | `Ingredients`, `Dosage`, `dosage`, `Composition` |
 | CAS Number | `CAS`, `CAS Number`, `cas_number` |
 | Molecular Weight | `MW`, `M.W.`, `Molecular Weight` |
 
-The default database is located at `databases/YPB_data_Arkusz3.csv` (91 products).
+The default database is `databases/YPB_data_Arkusz3.csv` (91 products).
 
 ### Importing a new database
 
@@ -183,7 +379,7 @@ The system supports:
 - **SVG files** — exported from Illustrator (preferred)
 - **Adobe Illustrator `.ai` files** — auto-converted to SVG on upload
 
-**Auto-detection** (zero manual work required): If your template contains the actual values from the database (e.g., the text `"Sermorelin"`, `"114466-38-5"`, `"YPB.211"`), the system will automatically identify which text element is which field.
+**Auto-detection** (zero manual work): If your template contains actual values from the database (e.g., `"Sermorelin"`, `"114466-38-5"`, `"YPB.211"`), the system will automatically identify which text element corresponds to which field.
 
 **Manual placeholders** (optional): You can add `data-placeholder` attributes to text elements in your SVG:
 ```xml
@@ -196,31 +392,7 @@ The system supports:
 
 ---
 
-## Running (Alternative Methods)
-
-```bash
-# Start
-./start.sh
-
-# Stop
-./stop.sh
-
-# Restart
-./restart.sh
-
-# Check logs
-tail -f /tmp/flask_app.log
-```
-
-Or run directly:
-```bash
-source .venv/bin/activate
-python app.py
-```
-
----
-
-## Railway Deployment
+## Railway Deployment (Cloud)
 
 The application includes a `Procfile` and `Dockerfile` for deployment on [Railway](https://railway.app).
 
@@ -230,47 +402,38 @@ The application includes a `Procfile` and `Dockerfile` for deployment on [Railwa
    - `GEMINI_API_KEY`
    - `AUTH_USER`
    - `AUTH_PASS`
-4. Deploy
+4. Deploy — Railway auto-detects the Dockerfile and builds the image
 
-The app is configured for Railway's 8 CPU / 8 GB RAM instances. Recommended plan: Pro (for long-running mockup generation jobs).
-
----
-
-## System Requirements
-
-| Requirement | Minimum | Recommended |
-|-------------|---------|-------------|
-| Python | 3.9 | 3.11+ |
-| RAM | 2 GB | 4 GB+ |
-| CPU | 2 cores | 4+ cores |
-| Disk | 500 MB | 2 GB+ |
-| OS | macOS / Linux | macOS / Ubuntu |
+Recommended Railway plan: **Pro** (8 CPU / 8 GB RAM) for long-running mockup generation jobs.
 
 ---
 
 ## Troubleshooting
 
-**"no library called cairo-2 was found"**
-→ Install Cairo: see [INSTALL_CAIRO.md](INSTALL_CAIRO.md)
-
 **Mockup generation fails / Gemini API error**
-→ Check that `GEMINI_API_KEY` is set correctly in `.env.local`
+→ Check that `GEMINI_API_KEY` is set correctly
 → Verify the key is active at https://aistudio.google.com/apikey
 
-**Labels generate but text is wrong / garbled**
-→ The template uses a custom-encoded font. The system will fall back to AI-based text detection automatically. If issues persist, try exporting the template as SVG from Illustrator with "Outline Text" disabled.
+**Labels generate but text is wrong or garbled**
+→ The template uses a custom-encoded font. The system falls back to AI-based text detection automatically. If issues persist, re-export the template from Illustrator as SVG with "Outline Text" disabled.
 
 **CSV import fails**
 → Ensure the file is UTF-8 encoded
-→ Check that SKU, Product, and Dosage columns are present (CAS and MW are optional)
+→ SKU, Product, and Dosage columns must be present (CAS and MW are optional)
 
-**Application won't start on macOS (Apple Silicon)**
-→ Run the following before starting:
-```bash
-export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:$PKG_CONFIG_PATH"
-export DYLD_LIBRARY_PATH="/opt/homebrew/lib:$DYLD_LIBRARY_PATH"
-./start.sh
-```
+**"no library called cairo-2 was found" (manual install)**
+→ See [INSTALL_CAIRO.md](INSTALL_CAIRO.md)
+
+---
+
+## System Requirements
+
+| | Docker | Manual |
+|---|---|---|
+| OS | macOS, Windows 10+, Linux | macOS, Linux |
+| RAM | 4 GB+ | 2 GB+ |
+| Disk | 10 GB free (image ~4-5 GB) | 2 GB free |
+| CPU | Any modern CPU | Any modern CPU |
 
 ---
 
@@ -288,7 +451,9 @@ YPBv2/
 ├── renderer.py               # SVG → PNG/JPG rendering
 ├── csv_manager.py            # Database management
 ├── config.py                 # Configuration
+├── Dockerfile                # Docker image definition
 ├── requirements.txt          # Python dependencies
+├── .env.example              # Environment variables template
 ├── databases/
 │   └── YPB_data_Arkusz3.csv  # Product database (91 products)
 ├── fonts/                    # Bundled fonts (required)
