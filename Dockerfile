@@ -114,7 +114,8 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p temp output uploads databases
 
-# Expose port (Railway will override this)
+# Default port — Railway overrides this automatically with its own $PORT
+ENV PORT=8000
 EXPOSE 8000
 
 # Run the application with Gunicorn (production server)
