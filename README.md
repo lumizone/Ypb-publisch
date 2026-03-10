@@ -1,233 +1,304 @@
-# Label Replication System
+# YPB Label & Mockup Generator
 
-Automated label generation and mockup system that takes a designer-approved Adobe Illustrator template and generates production-ready labels for multiple products by replacing only three text fields: product name, ingredients, and SKU.
+An automated system for generating production-ready labels and photorealistic product mockups from designer-approved templates.
 
-**Ostatnia aktualizacja:** 1 lutego 2026 - Text Alignment Control (LEFT/CENTER/RIGHT)
+---
 
-## Features
+## Overview
 
-### Label Generation
-- **Template-based generation**: Uses finalized Illustrator templates (SVG/PDF)
-- **Deterministic text replacement**: Only replaces specified fields, preserves all styling
-- **Text alignment control**: Choose LEFT, CENTER, or RIGHT alignment for Product Name and Ingredients
-- **Batch processing**: Generate labels for 60-100+ products in minutes
-- **Print-ready output**: PNG (300 DPI) and PDF (vector) formats
-- **Organized delivery**: All files packaged in structured ZIP archives
-- **No design changes**: Layout, fonts, colors, and positioning are locked
+This application takes a finalized Illustrator/SVG label template and generates labels for your entire product line by replacing only the data fields (product name, dosage, SKU, CAS number, molecular weight) — preserving all design, fonts, colors, and layout exactly as the designer intended.
 
-### Mockup Generation (AI-powered)
-- **Gemini API integration**: Uses Google Gemini 2.5 Flash for realistic mockup generation
-- **Auto-retry logic**: 3 attempts with AI verification
-- **AI verification**: Validates SKU, product name, and dosage on mockups
-- **Parallel processing**: Generate multiple mockups simultaneously (ThreadPoolExecutor)
-- **Green screen removal**: Automatic background removal for transparent mockups
-- **Production-ready**: High-quality, photorealistic product mockups
+**Key features:**
+- Batch label generation: 90+ labels in ~35 seconds
+- Output: SVG + JPG at 2400 DPI (4200×1800 px, print-ready)
+- AI-powered mockup generation (Google Gemini) — photorealistic product photos
+- Automatic placeholder detection — zero manual template editing required
+- Web-based UI accessible from any browser
 
-## Requirements
+---
 
-- Python 3.8+
-- Required system libraries (for Cairo):
-  - macOS: `brew install cairo pkg-config`
-  - Ubuntu/Debian: `sudo apt-get install libcairo2-dev pkg-config`
-  - Windows: Install GTK+ runtime
-- **Gemini API Key** (for mockup generation):
-  - Get from: https://ai.google.dev/
-  - Set in `.env.local`: `GEMINI_API_KEY=your_key_here`
+## Prerequisites
 
-## Installation
+- **Python 3.9+**
+- **Cairo** (required for SVG rendering) — see [INSTALL_CAIRO.md](INSTALL_CAIRO.md)
+- **Google Gemini API key** (required for mockup generation only)
+  - Get one free at: https://aistudio.google.com/apikey
 
-1. Clone or download this repository
+---
 
-2. Install system dependencies (macOS):
+## Quick Start
+
+### 1. Clone the repository
+
 ```bash
-brew install cairo pkg-config
+git clone <repository-url>
+cd YPBv2
 ```
 
-3. Install Python dependencies:
+### 2. Create a virtual environment
+
 ```bash
-python3 -m pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate   # macOS/Linux
+# or: .venv\Scripts\activate  (Windows)
 ```
 
-   **Note:** On macOS with Homebrew, you may need to set library paths. Use the setup script:
-   ```bash
-   source setup_env.sh
-   python3 -m pip install -r requirements.txt
-   ```
+### 3. Install dependencies
 
-4. Verify installation:
 ```bash
-# Activate virtual environment first
-source .venv/bin/activate
-python cli.py --help
-
-# Or use the helper script
-./run.sh cli.py --help
+pip install -r requirements.txt
 ```
+
+### 4. Configure environment
+
+```bash
+cp .env.example .env.local
+```
+
+Edit `.env.local` and fill in your values:
+
+```
+GEMINI_API_KEY=your_gemini_api_key_here
+AUTH_USER=Admin
+AUTH_PASS=your_password_here
+DISABLE_AUTH=true
+```
+
+### 5. Start the application
+
+```bash
+./start.sh
+```
+
+Then open your browser at **http://localhost:8000**
+
+---
+
+## Obtaining a Gemini API Key
+
+1. Go to https://aistudio.google.com/apikey
+2. Sign in with a Google account
+3. Click **Create API key**
+4. Copy the key into your `.env.local` file as `GEMINI_API_KEY=...`
+
+The free tier is sufficient for generating mockups. Mockup generation uses the `gemini-2.5-flash-image` model.
+
+---
 
 ## Usage
 
-### Command Line Interface
+The application has three generators accessible from the web UI:
 
-**Important:** Always activate the virtual environment first, or use the helper script:
-```bash
-# Activate virtual environment
-source .venv/bin/activate
+### Label Generator (Standalone)
 
-# Then run
-python cli.py <template.svg> <products.csv> -o output/ -z labels.zip
+1. Upload your label template (SVG or Adobe Illustrator `.ai` file)
+2. The system auto-detects all text fields (product name, dosage, SKU, CAS, MW)
+3. Select your product database (CSV)
+4. Click **Generate Labels**
+5. Download the ZIP archive
 
-# Or use the helper script (automatically activates venv and sets paths)
-./run.sh cli.py <template.svg> <products.csv> -o output/ -z labels.zip
+**Output ZIP structure:**
+```
+Labels/
+  YPB.211/
+    YPB.211.svg
+    YPB.211.jpg
+  YPB.212/
+    YPB.212.svg
+    YPB.212.jpg
 ```
 
-**Arguments:**
-- `template`: Path to label template (SVG or PDF)
-- `csv`: Path to product CSV file
-- `-o, --output`: Output directory (default: `./output`)
-- `-z, --zip`: ZIP file output path (optional)
-- `-w, --workers`: Number of parallel workers (default: 1)
+### Mockup Generator (Standalone)
 
-**Example:**
-```bash
-python cli.py template.svg "YPB- database - Products.csv" -o labels/ -z labels_batch.zip
-```
-
-### Web Interface
-
-Start the Flask web server:
-
-```bash
-# Activate virtual environment first
-source .venv/bin/activate
-python app.py
-
-# Or use the helper script
-./run.sh app.py
-```
-
-Then open your browser to `http://localhost:8000` and use the admin UI to:
-1. Upload your label template
-2. Upload your product CSV
-3. Generate labels
+1. Upload a vial/product photo
+2. Select or upload label files
+3. Click **Generate Mockups**
 4. Download the ZIP archive
 
-### CSV Format
-
-Your CSV file should have these columns:
-- `Product` (or `product_name`)
-- `Ingredients` (or `ingredients`, `composition`)
-- `SKU` (or `sku`)
-
-**Example:**
-```csv
-Product,Ingredients,SKU
-Sermorelin,10mg,YPB.211
-BPC-157,5mg,YPB.212
+**Output ZIP structure:**
 ```
+Mockups/
+  YPB.211.png
+  YPB.212.png
+```
+
+### Combined Generator (Recommended)
+
+Generates labels and mockups in one workflow:
+
+1. **Upload Vial** — your product photo
+2. **Label Template** — SVG or AI file
+3. **Template Preview** — verify text area detection
+4. **Product Data** — select CSV database, choose products
+5. **Generate Labels** — batch generate all labels
+6. **Generate Mockups** — batch generate all mockups
+7. **Download All** — combined ZIP with labels + mockups
+
+**Combined ZIP structure:**
+```
+Labels/
+  YPB.211/
+    YPB.211.svg
+    YPB.211.jpg
+Mockups/
+  YPB.211.png
+```
+
+---
+
+## Product Database
+
+The system uses a CSV file with 5 columns:
+
+```csv
+SKU,Product,Dosage,CAS Number,Molecular Weight
+YPB.211,Sermorelin,10mg,114466-38-5,3357.88 Da
+YPB.212,BPC-157,5mg,137525-51-0,1419.55 Da
+```
+
+**Column mapping** (auto-detected, column names are flexible):
+| Field | Accepted names |
+|-------|----------------|
+| SKU | `SKU`, `sku` |
+| Product name | `Product`, `product_name`, `Name` |
+| Dosage | `Ingredients`, `Dosage`, `dosage`, `Composition` |
+| CAS Number | `CAS`, `CAS Number`, `cas_number` |
+| Molecular Weight | `MW`, `M.W.`, `Molecular Weight` |
+
+The default database is located at `databases/YPB_data_Arkusz3.csv` (91 products).
+
+### Importing a new database
+
+In the **Database** tab of the web UI:
+1. Click **Import CSV**
+2. Upload your CSV file
+3. Map columns to fields (auto-mapped if names match)
+4. Click **Import**
+
+---
 
 ## Template Preparation
 
-### Illustrator Template Requirements
+The system supports:
+- **SVG files** — exported from Illustrator (preferred)
+- **Adobe Illustrator `.ai` files** — auto-converted to SVG on upload
 
-1. **Export format**: Export your Illustrator file as SVG (preferred) or PDF
-2. **Placeholder identification**: The three text fields must be identifiable by one of:
-   - Layer/object ID matching: `product_name`, `ingredients`, `sku`
-   - Data attribute: `data-placeholder="product_name"`
-   - Text content placeholder: `{product_name}` or `[product_name]`
+**Auto-detection** (zero manual work required): If your template contains the actual values from the database (e.g., the text `"Sermorelin"`, `"114466-38-5"`, `"YPB.211"`), the system will automatically identify which text element is which field.
 
-3. **Field names** (must match exactly):
-   - `product_name`
-   - `ingredients`
-   - `sku`
-
-### SVG Template Example
-
-```svg
-<text id="product_name" x="100" y="50" style="font-family: Arial; font-size: 24px;">
-  {product_name}
-</text>
-<text id="ingredients" x="100" y="100" style="font-family: Arial; font-size: 12px;">
-  {ingredients}
-</text>
-<text id="sku" x="100" y="150" style="font-family: Arial; font-size: 10px;">
-  {sku}
-</text>
+**Manual placeholders** (optional): You can add `data-placeholder` attributes to text elements in your SVG:
+```xml
+<text data-placeholder="product_name">Sermorelin</text>
+<text data-placeholder="ingredients">10mg</text>
+<text data-placeholder="sku">YPB.211</text>
+<text data-placeholder="cas">114466-38-5</text>
+<text data-placeholder="mw">3357.88 Da</text>
 ```
 
-## Output Structure
+---
 
-Generated files are organized as:
+## Running (Alternative Methods)
 
+```bash
+# Start
+./start.sh
+
+# Stop
+./stop.sh
+
+# Restart
+./restart.sh
+
+# Check logs
+tail -f /tmp/flask_app.log
 ```
-/labels/
-  product-name_sku.pdf
-  product-name_sku.png
-  ...
+
+Or run directly:
+```bash
+source .venv/bin/activate
+python app.py
 ```
 
-All files are packaged in a ZIP archive for easy delivery.
+---
 
-## Architecture
+## Railway Deployment
 
-### Core Modules
-- **template_parser.py**: Parses SVG/PDF templates and detects placeholders
-- **data_mapper.py**: Loads and validates product data from CSV
-- **text_replacer.py**: Replaces text while preserving all styling
-- **text_formatter.py**: Intelligent text wrapping and font sizing
-- **renderer.py**: Exports to PNG (300 DPI) and PDF (vector)
-- **batch_processor.py**: Orchestrates batch generation
-- **packager.py**: Creates organized ZIP archives
-- **ai_converter.py**: AI/PDF to SVG conversion
+The application includes a `Procfile` and `Dockerfile` for deployment on [Railway](https://railway.app).
 
-### Web Application
-- **app.py**: Flask web interface with REST API
-  - Label generation endpoints
-  - Mockup generation endpoints (Gemini API)
-  - Database management endpoints
-  - Progress tracking and file delivery
+1. Push to a GitHub repository
+2. Create a new project on Railway, connect the repo
+3. Add environment variables in Railway dashboard:
+   - `GEMINI_API_KEY`
+   - `AUTH_USER`
+   - `AUTH_PASS`
+4. Deploy
 
-### Mockup Generation (AI)
-- **Gemini SDK**: `google-genai>=1.47.0` (zaktualizowany 29.01.2026)
-- **Functions**:
-  - `_generate_mockup_for_product_with_retry()`: Generates mockups with retry logic
-  - `_verify_mockup_with_vision()`: AI verification of mockup text
-  - `add_green_background()`: Adds green screen background
-  - `remove_background_with_reference()`: Green screen removal
+The app is configured for Railway's 8 CPU / 8 GB RAM instances. Recommended plan: Pro (for long-running mockup generation jobs).
 
-## Constraints
+---
 
-- **No layout changes**: Elements cannot be moved or resized
-- **No font substitution**: Fonts must be embedded or available server-side
-- **Text overflow**: Designer is responsible for ensuring text fits bounds
-- **AI files**: Must be exported to SVG/PDF before use (Phase 1)
+## System Requirements
 
-## Error Handling
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| Python | 3.9 | 3.11+ |
+| RAM | 2 GB | 4 GB+ |
+| CPU | 2 cores | 4+ cores |
+| Disk | 500 MB | 2 GB+ |
+| OS | macOS / Linux | macOS / Ubuntu |
 
-The system will:
-- Validate templates before processing
-- Skip individual products that fail (log error, continue batch)
-- Provide detailed error messages
-- Generate partial batches if some products fail
+---
 
 ## Troubleshooting
 
-**"Missing required placeholders" error:**
-- Ensure your template has text elements with IDs: `product_name`, `ingredients`, `sku`
-- Check that SVG exports preserve layer names/IDs
+**"no library called cairo-2 was found"**
+→ Install Cairo: see [INSTALL_CAIRO.md](INSTALL_CAIRO.md)
 
-**"Rendering failed" error:**
-- Verify Cairo libraries are installed correctly
-- Check SVG file is valid XML
-- Ensure fonts are embedded or available
+**Mockup generation fails / Gemini API error**
+→ Check that `GEMINI_API_KEY` is set correctly in `.env.local`
+→ Verify the key is active at https://aistudio.google.com/apikey
 
-**"CSV parsing error":**
-- Verify CSV has correct column names (Product, Ingredients, SKU)
-- Check for encoding issues (should be UTF-8)
+**Labels generate but text is wrong / garbled**
+→ The template uses a custom-encoded font. The system will fall back to AI-based text detection automatically. If issues persist, try exporting the template as SVG from Illustrator with "Outline Text" disabled.
+
+**CSV import fails**
+→ Ensure the file is UTF-8 encoded
+→ Check that SKU, Product, and Dosage columns are present (CAS and MW are optional)
+
+**Application won't start on macOS (Apple Silicon)**
+→ Run the following before starting:
+```bash
+export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:$PKG_CONFIG_PATH"
+export DYLD_LIBRARY_PATH="/opt/homebrew/lib:$DYLD_LIBRARY_PATH"
+./start.sh
+```
+
+---
+
+## File Structure
+
+```
+YPBv2/
+├── app.py                    # Flask web application
+├── app_dashboard.html        # Frontend UI
+├── ai_converter.py           # AI/PDF → SVG conversion
+├── text_replacer.py          # Text replacement engine
+├── text_formatter.py         # Text wrapping & font sizing
+├── template_parser.py        # SVG template parsing
+├── batch_processor.py        # Parallel batch processing
+├── renderer.py               # SVG → PNG/JPG rendering
+├── csv_manager.py            # Database management
+├── config.py                 # Configuration
+├── requirements.txt          # Python dependencies
+├── databases/
+│   └── YPB_data_Arkusz3.csv  # Product database (91 products)
+├── fonts/                    # Bundled fonts (required)
+├── uploads/                  # Uploaded templates (auto-managed)
+├── output/                   # Generated files (auto-managed)
+└── temp/                     # Temporary files (auto-cleaned)
+```
+
+---
 
 ## License
 
 Internal use only.
-
-## Support
-
-For issues or questions, refer to the developer handoff documentation.
